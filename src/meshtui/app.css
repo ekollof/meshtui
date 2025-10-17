@@ -1,0 +1,320 @@
+/* MeshTUI CSS Styles */
+
+Screen {
+    layout: vertical;
+}
+
+Header {
+    height: 3;
+    background: $primary;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+}
+
+#footer {
+    height: 1;
+    background: $surface;
+    color: $text-muted;
+}
+
+#sidebar {
+    width: 25%;
+    height: 100%;
+    background: $panel;
+    border-right: solid $primary;
+}
+
+#contacts-header {
+    height: 3;
+    background: $primary;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    border-bottom: solid $primary;
+}
+
+#contacts-list {
+    height: auto;
+    max-height: 40%;
+    background: $panel;
+    border: none;
+}
+
+#channels-header {
+    height: 3;
+    background: $primary;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    border-bottom: solid $primary;
+    margin-top: 1;
+}
+
+#channels-list {
+    height: auto;
+    max-height: 30%;
+    background: $panel;
+    border: none;
+}
+
+#scan-btn {
+    height: 3;
+    margin: 1;
+}
+
+#test-log-btn {
+    height: 3;
+    margin: 1 1 0 1;
+}
+
+#main-content {
+    width: 50%;
+    height: 100%;
+    layout: vertical;
+}
+
+#log-sidebar {
+    width: 25%;
+    height: 100%;
+    background: $panel;
+    border-left: solid $primary;
+}
+
+#logs-header {
+    height: 3;
+    background: $primary;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    border-bottom: solid $primary;
+}
+
+#log-panel {
+    height: 1fr;
+    background: $panel;
+    border: none;
+    color: $text;
+}
+
+#chat-container {
+    height: 100%;
+    width: 100%;
+    layout: vertical;
+}
+
+#chat-area {
+    height: 1fr;
+    width: 100%;
+    background: $surface;
+    border: solid $primary;
+    margin: 1 1 0 1;
+}
+
+RichLog {
+    background: $surface;
+    color: $text;
+    border: solid $primary;
+}
+
+#input-container {
+    height: 5;
+    width: 100%;
+    layout: horizontal;
+    margin: 0;
+}
+
+#message-input {
+    width: 1fr;
+    height: 3;
+    margin: 1;
+}
+
+#send-btn {
+    width: 12;
+    height: 3;
+    margin: 1 1 1 0;
+}
+
+/* Node Management Styles */
+#node-list-container {
+    width: 40%;
+    height: 100%;
+    background: $panel;
+    border-right: solid $primary;
+}
+
+#nodes-header {
+    height: 3;
+    background: $primary;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    border-bottom: solid $primary;
+}
+
+#nodes-list {
+    height: 1fr;
+    background: $panel;
+    border: none;
+}
+
+#refresh-nodes-btn {
+    height: 3;
+    margin: 1;
+}
+
+#node-control-container {
+    width: 60%;
+    height: 100%;
+    layout: vertical;
+    background: $panel;
+}
+
+#node-control-header {
+    height: 3;
+    background: $primary;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    border-bottom: solid $primary;
+}
+
+#node-name-input {
+    width: 30%;
+    height: 3;
+    margin: 1 0 1 1;
+}
+
+#node-password-input {
+    width: 30%;
+    height: 3;
+    margin: 1 0 1 0;
+}
+
+#node-login-btn {
+    width: 20%;
+    height: 3;
+    margin: 1 1 1 0;
+}
+
+#node-command-input {
+    width: 70%;
+    height: 3;
+    margin: 1 0 1 1;
+}
+
+#node-send-cmd-btn {
+    width: 25%;
+    height: 3;
+    margin: 1 1 1 0;
+}
+
+#node-status-btn {
+    width: 20;
+    height: 3;
+    margin: 1 1 1 1;
+}
+
+#node-status-area {
+    height: 1fr;
+    background: $surface;
+    border: solid $primary;
+    margin: 1;
+    padding: 1;
+}
+
+/* Tabbed Content Styling */
+TabbedContent {
+    height: 100%;
+    width: 100%;
+}
+
+TabPane {
+    height: 100%;
+    width: 100%;
+    layout: vertical;
+}
+
+ContentSwitcher {
+    height: 1fr;
+    width: 100%;
+}
+
+/* Button styling */
+Button {
+    background: $primary;
+    color: $text;
+    border: none;
+}
+
+Button:hover {
+    background: $primary-lighten-2;
+}
+
+Button:focus {
+    background: $primary-lighten-1;
+    border: solid $accent;
+}
+
+/* Input styling */
+Input {
+    background: $surface;
+    color: $text;
+    border: solid $primary;
+}
+
+Input:focus {
+    border: solid $accent;
+}
+
+#message-input {
+    background: white;
+    color: black;
+    border: solid green;
+}
+
+#message-input:focus {
+    background: white;
+    color: black;
+    border: solid cyan;
+}
+
+/* List styling */
+ListView {
+    background: $panel;
+    border: none;
+}
+
+ListItem {
+    background: $panel;
+    color: $text;
+}
+
+ListItem:hover {
+    background: $primary-darken-2;
+}
+
+/* TextArea styling */
+TextArea {
+    background: $surface;
+    color: $text;
+    border: solid $primary;
+}
+
+TextArea:focus {
+    border: solid $accent;
+}
+
+/* Status indicators */
+.connected {
+    color: $success;
+}
+
+.disconnected {
+    color: $error;
+}
+
+.pending {
+    color: $warning;
+}

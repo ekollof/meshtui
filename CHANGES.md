@@ -1,0 +1,179 @@
+# MeshTUI Changelog
+
+## Recent Refactoring (Latest)
+
+### Modular Architecture
+- **Split into focused modules** for better maintainability
+- **transport.py** - BLE, Serial, TCP connection handling
+- **contact.py** - ContactManager for node/contact operations
+- **channel.py** - ChannelManager for channel messaging
+- **room.py** - RoomManager for room server authentication
+
+### Features Added
+- ✅ **Room server support** - Automatic detection and password login
+- ✅ **Queued message retrieval** - Fetches messages after room login
+- ✅ **Public channel messaging** - Send to channel 0 (public)
+- ✅ **Node type detection** - Companion, Repeater, Room, Sensor
+- ✅ **Contact-based chat** - Direct messaging to contacts
+- ✅ **Channel selection** - Join and message channels
+- ✅ **Message history** - View past conversations
+
+### Architecture Benefits
+1. **Separation of Concerns** - Each module has one job
+2. **Easier Testing** - Test managers independently
+3. **Better Maintainability** - Smaller, focused files
+4. **Cleaner Code** - No 1000-line files!
+5. **Type Safety** - Proper manager delegation
+
+### Module Responsibilities
+
+**app.py** (UI Layer)
+- Textual widgets and user interface
+- Delegates to connection manager
+- No direct MeshCore API calls
+
+**connection.py** (Orchestration)
+- Initializes managers after connection
+- Handles events and message storage
+- Provides unified API to UI
+
+**transport.py** (Connection Layer)
+- SerialTransport - Port discovery
+- BLETransport - Device scanning
+- TCPTransport - Network connections
+
+**contact.py** (Business Logic)
+- Contact list management
+- Node type detection
+- Direct messaging
+
+**channel.py** (Business Logic)
+- Channel discovery
+- Channel messaging
+- Join/configure channels
+
+**room.py** (Business Logic)  
+- Room authentication
+- Message queue fetching
+- Login state tracking
+
+## Previous Changes
+
+### 1. ✅ Fixed Problems with Getting Contacts
+- **Problem**: Contacts weren't being retrieved properly
+- **Solution**: 
+  - Added proper event subscription for `CONTACT_UPDATE` events
+  - Enabled `auto_update_contacts` on the MeshCore instance
+  - Fixed the contacts retrieval logic to properly handle the payload structure
+  - Added contact change detection to avoid unnecessary UI updates
+  - Implemented automatic contact refresh when new contacts are detected
+
+### 2. ✅ Received Messages Not Being Shown
+- **Problem**: Messages weren't being displayed in the chat area
+- **Solution**:
+  - Added event subscriptions for `CONTACT_MSG_RECV` and `CHANNEL_MSG_RECV`
+  - Implemented message handlers that automatically update the UI when messages arrive
+  - Added message storage with proper structure (sender, recipient, text, timestamp)
+  - Implemented message filtering to show messages for the current selected contact
+  - Added proper message display formatting with timestamps and sender names
+
+### 3. ✅ No Public Channels or Hash Channels
+- **Problem**: No support for public/hash channels
+- **Solution**:
+  - Added channels list to the UI sidebar
+  - Implemented `get_channels()` method to retrieve available channels
+  - Added support for joining channels via `join_channel(channel_name)`
+  - Implemented channel message handling with proper event subscription
+  - Added channel selection UI to switch between direct messages and channels
+  - Added "Public" pseudo-channel to show all channel messages
+
+### 4. ✅ No Way to Join Room Nodes
+- **Problem**: Room nodes (repeaters) couldn't be joined/managed
+- **Solution**:
+  - Created dedicated "Node Management" tab in the UI
+  - Implemented node list with refresh functionality
+  - Added login/logout functionality for repeater nodes
+  - Implemented command sending to repeaters
+  - Added status request functionality for nodes
+  - Created message waiting functionality for repeater responses
+
+## Technical Improvements
+
+### Connection Management (`connection.py`)
+- Added proper event subscription system
+- Implemented contact change detection
+- Added message storage and retrieval
+- Implemented channel management (list, join, message handling)
+- Added repeater/node management methods
+- Improved error handling and logging
+- Added async event handlers for real-time updates
+
+### UI Improvements (`app.py`)
+- Added channels list sidebar
+- Implemented contact selection with visual feedback
+- Added channel selection support
+- Created "Public" view for all channel messages
+- Added Node Management tab with:
+  - Node list display
+  - Login/logout controls
+  - Command sending interface
+  - Status request functionality
+- Improved message display with timestamps
+- Added proper event handling for UI updates
+- Fixed async method calls to properly await results
+
+### Event Handling
+- Subscribed to all relevant MeshCore events:
+  - `CONTACT_UPDATE`: For contact list changes
+  - `CONTACT_MSG_RECV`: For direct messages
+  - `CHANNEL_MSG_RECV`: For channel messages
+  - `NEW_CONTACT`: For new contact detection
+  - `ADVERTISEMENT`: For network advertisements
+  - `PATH_UPDATE`: For path changes
+
+## Code Quality
+- Created comprehensive `.github/copilot-instructions.md` for:
+  - Python best practices with type hints and docstrings
+  - MeshCore API patterns and usage
+  - Textual UI patterns and conventions
+  - Async/await guidelines
+  - Error handling strategies
+  - Testing considerations
+  - Security and performance guidelines
+
+## Testing
+- Application successfully connects to MeshCore devices
+- Contacts are properly retrieved and displayed
+- Messages are received and shown in real-time
+- Channels can be listed and joined
+- Node management functionality is operational
+
+## Usage Examples
+
+### Viewing Contacts and Messages
+1. Start the app: `python -m meshtui -s /dev/ttyUSB0`
+2. Contacts appear in the left sidebar
+3. Click a contact to view their messages
+4. Type in the input field and press Enter or click Send
+
+### Using Channels
+1. Channels appear in the "Channels" section of the sidebar
+2. Click "Public" to see all channel messages
+3. Click a specific channel to filter messages
+4. Use the input field to send messages to the selected channel
+
+### Managing Nodes
+1. Switch to the "Node Management" tab
+2. Click "Refresh Nodes" to see available repeaters
+3. Enter node name and password
+4. Click "Login" to authenticate
+5. Use "Send Command" to execute commands
+6. Click "Get Status" to request node status
+
+## Files Modified
+- `src/meshtui/connection.py` - Major enhancements to connection and event handling
+- `src/meshtui/app.py` - UI improvements and new features
+- `.github/copilot-instructions.md` - New comprehensive coding guidelines
+
+## Dependencies
+No new dependencies added. All features use existing meshcore API.
