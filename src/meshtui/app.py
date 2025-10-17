@@ -32,6 +32,24 @@ from textual.binding import Binding
 from .connection import MeshConnection
 
 
+def sanitize_id(name: str) -> str:
+    """Convert a name to a valid HTML/CSS ID.
+    
+    Args:
+        name: The name to sanitize
+        
+    Returns:
+        Valid ID string with only letters, numbers, underscores, and hyphens
+    """
+    # Replace spaces and invalid characters with underscores
+    import re
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    # Ensure it doesn't start with a number
+    if sanitized and sanitized[0].isdigit():
+        sanitized = f"_{sanitized}"
+    return sanitized
+
+
 class TextualLogHandler(logging.Handler):
     """Custom logging handler that writes to a Textual Log widget."""
 
@@ -84,6 +102,8 @@ class MeshTUI(App):
         self.current_contact = None
         self.current_channel = None
         self._awaiting_room_password = False  # Flag for room password input
+        self._contact_id_map = {}  # Map sanitized IDs back to contact names
+        self._channel_id_map = {}  # Map sanitized IDs back to channel names
         self.messages = []
 
         # Setup logging (will be configured in on_mount)
@@ -103,8 +123,8 @@ class MeshTUI(App):
                 yield Static("Channels", id="channels-header")
                 yield ListView(id="channels-list")
                 
-                yield Button("Scan Devices", id="scan-btn", variant="primary")
-                yield Button("Test Logging", id="test-log-btn", variant="default")
+                yield Button("Send Advert (0-hop)", id="advert-0hop-btn", variant="primary")
+                yield Button("Send Advert (Flood)", id="advert-flood-btn", variant="default")
 
             # Main content area with tabs
             with Vertical(id="main-content"):
@@ -377,76 +397,43 @@ class MeshTUI(App):
         except Exception as e:
             self.logger.error(f"Auto-connect failed: {e}")
 
-    @on(Button.Pressed, "#scan-btn")
-    async def scan_devices(self) -> None:
-        """Scan for available meshcore devices."""
-        self.logger.info("Scanning for devices...")
+    @on(Button.Pressed, "#advert-0hop-btn")
+    async def send_zero_hop_advert(self) -> None:
+        """Send a zero-hop advertisement (only to direct neighbors)."""
+        self.logger.info("Sending 0-hop advertisement...")
         try:
-            # Scan for BLE devices
-            ble_devices = await self.connection.scan_ble_devices()
-            self.logger.info(f"Found {len(ble_devices)} BLE devices")
-
-            # Scan for serial devices
-            serial_devices = await self.connection.scan_serial_devices()
-            self.logger.info(f"Found {len(serial_devices)} serial devices")
-
-            all_devices = ble_devices + serial_devices
-
-            if all_devices:
-                self.logger.info(f"Total devices found: {len(all_devices)}")
-                # Prioritize /dev/ttyUSB0 if available
-                usb_device = next(
-                    (d for d in serial_devices if d.get("device") == "/dev/ttyUSB0"), None
-                )
-
-                if usb_device and not self.connection.is_connected():
-                    self.logger.info("Trying to connect to /dev/ttyUSB0...")
-                    success = await self.connection.connect_serial(port="/dev/ttyUSB0")
-                    if success:
-                        await self.update_contacts()
-                        await self.update_channels()
-                        await self.refresh_messages()
-                        return
-
-                # Try BLE devices next
-                if ble_devices and not self.connection.is_connected():
-                    self.logger.info(f"Trying to connect to BLE device: {ble_devices[0].get('address')}")
-                    success = await self.connection.connect_ble(
-                        address=ble_devices[0].get("address")
-                    )
-                    if success:
-                        await self.update_contacts()
-                        await self.update_channels()
-                        await self.refresh_messages()
-                        return
-
-                # Finally try other serial devices
-                if serial_devices and not self.connection.is_connected():
-                    # Skip /dev/ttyUSB0 if we already tried it
-                    other_serial = [
-                        d for d in serial_devices if d.get("device") != "/dev/ttyUSB0"
-                    ]
-                    if other_serial:
-                        self.logger.info(f"Trying to connect to serial device: {other_serial[0].get('device')}")
-                        success = await self.connection.connect_serial(
-                            port=other_serial[0].get("device")
-                        )
-                        if success:
-                            await self.update_contacts()
-                            await self.update_channels()
-                            await self.refresh_messages()
+            if not self.connection.is_connected():
+                self.logger.warning("Not connected to device")
+                return
+            
+            success = await self.connection.send_advertisement(hops=0)
+            if success:
+                self.logger.info("✓ Sent 0-hop advertisement successfully")
             else:
-                self.logger.info("No devices found")
+                self.logger.error("✗ Failed to send 0-hop advertisement")
         except Exception as e:
-            self.logger.error(f"Device scan failed: {e}")
+            self.logger.error(f"Error sending 0-hop advertisement: {e}")
             import traceback
             self.logger.debug(traceback.format_exc())
 
-    @on(Button.Pressed, "#test-log-btn")
-    async def test_logging(self) -> None:
-        """Test logging and event handling functionality."""
-        self.logger.info("🧪 TEST: Test logging button pressed")
-        print("DEBUG: Test logging button pressed - direct print")
+    @on(Button.Pressed, "#advert-flood-btn")
+    async def send_flood_advert(self) -> None:
+        """Send a flooding advertisement (max hops, reaches entire network)."""
+        self.logger.info("Sending flood advertisement...")
+        try:
+            if not self.connection.is_connected():
+                self.logger.warning("Not connected to device")
+                return
+            
+            success = await self.connection.send_advertisement(hops=3)
+            if success:
+                self.logger.info("✓ Sent flood advertisement successfully (3 hops)")
+            else:
+                self.logger.error("✗ Failed to send flood advertisement")
+        except Exception as e:
+            self.logger.error(f"Error sending flood advertisement: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
 
         if self.connection.is_connected():
             self.logger.info(
@@ -570,21 +557,12 @@ class MeshTUI(App):
     @on(ListView.Selected, "#contacts-list")
     async def on_contact_selected(self, event: ListView.Selected) -> None:
         """Handle contact selection."""
-        if event.item and hasattr(event.item, 'children') and len(event.item.children) > 0:
-            # Get the contact name from the Static widget in the ListItem
-            static_widget = event.item.children[0]
-            # Get the text content from the Static widget
-            if hasattr(static_widget, 'render'):
-                contact_text = str(static_widget.render()).strip()
-            else:
-                # Fallback to string conversion
-                contact_text = str(static_widget).strip()
-            
-            # Remove unread count if present (e.g., "Alice (3)" -> "Alice")
-            if '(' in contact_text:
-                contact_name = contact_text.split('(')[0].strip()
-            else:
-                contact_name = contact_text
+        if event.item and event.item.id:
+            # Look up the contact name from the ID mapping
+            contact_name = self._contact_id_map.get(event.item.id)
+            if not contact_name:
+                self.logger.warning(f"No contact found for ID: {event.item.id}")
+                return
             
             self.current_contact = contact_name
             self.current_channel = None  # Clear channel selection
@@ -629,21 +607,12 @@ class MeshTUI(App):
     @on(ListView.Selected, "#channels-list")
     async def on_channel_selected(self, event: ListView.Selected) -> None:
         """Handle channel selection."""
-        if event.item and hasattr(event.item, 'children') and len(event.item.children) > 0:
-            # Get the channel name from the Static widget in the ListItem
-            static_widget = event.item.children[0]
-            # Get the text content from the Static widget
-            if hasattr(static_widget, 'render'):
-                channel_text = str(static_widget.render()).strip()
-            else:
-                # Fallback to string conversion
-                channel_text = str(static_widget).strip()
-            
-            # Remove unread count if present (e.g., "Public (3)" -> "Public")
-            if '(' in channel_text:
-                channel_name = channel_text.split('(')[0].strip()
-            else:
-                channel_name = channel_text
+        if event.item and event.item.id:
+            # Look up the channel name from the ID mapping
+            channel_name = self._channel_id_map.get(event.item.id)
+            if not channel_name:
+                self.logger.warning(f"No channel found for ID: {event.item.id}")
+                return
             
             self.current_channel = channel_name
             self.current_contact = None  # Clear contact selection
@@ -722,15 +691,28 @@ class MeshTUI(App):
                     actual_sender = msg.get('actual_sender')  # For room messages
                     msg_type = msg.get('type', 'contact')
                     text = msg.get('text', '')
+                    signature = msg.get('signature', '')
+                    
+                    # Check if sender is a room server (type 3)
+                    sender_contact = self.connection.get_contact_by_name(sender)
+                    is_room_server = sender_contact and sender_contact.get('type') == 3
+                    
+                    # If no actual_sender but we have a signature, try to decode it
+                    if is_room_server and not actual_sender and signature:
+                        sig_contact = self.connection.contacts.get_by_key(signature) if self.connection.contacts else None
+                        if sig_contact:
+                            actual_sender = sig_contact.get('adv_name') or sig_contact.get('name', signature)
+                        else:
+                            actual_sender = signature[:8]  # Show short key if unknown
                     
                     # Format sender display (same as refresh_messages)
-                    if msg_type == "room" and actual_sender:
+                    if (msg_type == "room" or is_room_server) and actual_sender:
                         # Room message - show "Room / Sender: message"
                         display_sender = f"{sender} / {actual_sender}"
                         self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {text}\n")
-                    elif msg_type == "room":
-                        # Room message without sender info
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender}:[/cyan] {text}\n")
+                    elif msg_type == "room" or is_room_server:
+                        # Room message without sender info - show as anonymous
+                        self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/cyan] {text}\n")
                     elif sender == "Me":
                         # Message sent by me
                         self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n")
@@ -790,6 +772,7 @@ class MeshTUI(App):
 
             # Clear and repopulate contacts list
             self.contacts_list.clear()
+            self._contact_id_map.clear()  # Clear the mapping
             for contact in contacts:
                 contact_name = contact.get("name", "Unknown")
                 contact_type = contact.get("type", 0)
@@ -816,8 +799,13 @@ class MeshTUI(App):
                     display_text = f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
                 else:
                     display_text = f"[{color}]○[/{color}] {type_icon}{contact_name}"
+                
+                # Create ListItem with sanitized contact name as id for data retrieval
+                contact_id = f"contact-{sanitize_id(contact_name)}"
+                self._contact_id_map[contact_id] = contact_name  # Store mapping
+                list_item = ListItem(Static(display_text, markup=True), id=contact_id)
                     
-                self.contacts_list.append(ListItem(Static(display_text, markup=True)))
+                self.contacts_list.append(list_item)
                 self.logger.debug(f"Added contact to UI: {contact_name}")
 
             self.logger.info(f"Updated {len(contacts)} contacts in UI")
@@ -840,6 +828,7 @@ class MeshTUI(App):
 
             # Clear and repopulate channels list
             self.channels_list.clear()
+            self._channel_id_map.clear()  # Clear the mapping
             
             # Always add "Public" as first item with unread count
             public_unread = self.connection.get_unread_count("Public")
@@ -847,7 +836,9 @@ class MeshTUI(App):
                 public_display = f"Public ({public_unread})"
             else:
                 public_display = "Public"
-            self.channels_list.append(ListItem(Static(public_display)))
+            public_id = "channel-Public"
+            self._channel_id_map[public_id] = "Public"
+            self.channels_list.append(ListItem(Static(public_display), id=public_id))
             
             # Add other channels (channels is a list, not dict)
             for channel_info in channels:
@@ -861,8 +852,10 @@ class MeshTUI(App):
                         display_text = f"{channel_name} ({channel_unread})"
                     else:
                         display_text = channel_name
-                        
-                    self.channels_list.append(ListItem(Static(display_text)))
+                    
+                    channel_id = f"channel-{sanitize_id(channel_name)}"
+                    self._channel_id_map[channel_id] = channel_name
+                    self.channels_list.append(ListItem(Static(display_text), id=channel_id))
                     self.logger.debug(f"Added channel to UI: {channel_name}")
 
             self.logger.info(f"Updated {len(channels) + 1} channels in UI (including Public)")

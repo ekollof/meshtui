@@ -31,6 +31,9 @@ class MessageDatabase:
             cursor = self.conn.cursor()
             
             # Messages table
+            # TODO: Refactor to use pubkey-based lookups instead of names
+            # Names can change, but pubkeys are immutable. Currently storing both
+            # sender (name) and sender_pubkey for backward compatibility.
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -457,6 +460,28 @@ class MessageDatabase:
         except Exception as e:
             self.logger.error(f"Failed to get all unread counts: {e}")
             return {}
+    
+    def get_contact(self, pubkey: str) -> Optional[Dict[str, Any]]:
+        """Get a contact by public key.
+        
+        Args:
+            pubkey: Public key of the contact
+            
+        Returns:
+            Contact dictionary or None if not found
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                SELECT * FROM contacts WHERE pubkey = ?
+            """, (pubkey,))
+            
+            row = cursor.fetchone()
+            return dict(row) if row else None
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get contact: {e}")
+            return None
     
     def close(self):
         """Close database connection."""

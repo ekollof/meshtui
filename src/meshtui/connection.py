@@ -677,6 +677,38 @@ class MeshConnection:
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return None
 
+    async def send_advertisement(self, hops: int = 3) -> bool:
+        """Send an advertisement packet to announce presence.
+        
+        Args:
+            hops: Number of hops (0 = direct neighbors only, 3 = flood entire network)
+            
+        Returns:
+            True if successful
+        """
+        if not self.meshcore:
+            return False
+
+        try:
+            # MeshCore API uses boolean flood parameter
+            # hops 0 = not flood (direct neighbors), hops > 0 = flood
+            flood = hops > 0
+            self.logger.info(f"Sending advertisement (flood={flood}, hops={hops})")
+            result = await self.meshcore.commands.send_advert(flood)
+            
+            if result.type == EventType.ERROR:
+                self.logger.error(f"Failed to send advertisement: {result}")
+                return False
+            
+            self.logger.info(f"Advertisement sent successfully (flood={flood})")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error sending advertisement: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
+            return False
+
     def is_logged_into_room(self, room_name: str) -> bool:
         """Check if we're logged into a room server."""
         if self.rooms:
@@ -926,10 +958,24 @@ class MeshConnection:
         return self.device_info
 
     def get_contacts(self) -> List[Dict[str, Any]]:
-        """Get current contacts list."""
-        if self.contacts:
-            return self.contacts.get_all()
-        return []
+        """Get current contacts list.
+        
+        Contacts returned from MeshCore are fresh by definition - 
+        if the device has them, they're active.
+        """
+        if not self.contacts:
+            return []
+        
+        import time
+        now = int(time.time())
+        
+        contacts = self.contacts.get_all()
+        
+        # Mark all contacts as fresh since MeshCore has them
+        for contact in contacts:
+            contact['last_seen'] = now
+        
+        return contacts
 
     def get_contact_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """Get a contact by their name."""
