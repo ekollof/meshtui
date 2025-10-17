@@ -87,7 +87,30 @@ MeshTUI is a Textual-based TUI (Terminal User Interface) application for interfa
    self.chat_area.insert(f"[green]{sender}:[/green] {message}\n")
    ```
 
-### Async/Await Guidelines
+### Git Operations
+
+**IMPORTANT: Always use GitKraken tools for git operations**
+
+- Use `mcp_gitkraken_git_add_or_commit` with `action: "add"` to stage files
+- Use `mcp_gitkraken_git_add_or_commit` with `action: "commit"` to commit changes
+- Use `mcp_gitkraken_git_push` to push changes
+- Use `mcp_gitkraken_git_blame` to view file history
+- Never use terminal commands like `git add`, `git commit`, etc.
+
+Example commit workflow:
+```python
+# Stage all changes
+mcp_gitkraken_git_add_or_commit(action="add", directory="/path/to/repo")
+
+# Commit with message
+mcp_gitkraken_git_add_or_commit(
+    action="commit", 
+    directory="/path/to/repo",
+    message="Descriptive commit message"
+)
+```
+
+### Async Best Practices
 
 1. **Concurrency**: Use `asyncio.wait_for()` for timeout protection
 2. **Task Management**: Properly clean up background tasks in `disconnect()`
