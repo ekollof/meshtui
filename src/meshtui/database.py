@@ -604,15 +604,18 @@ class MessageDatabase:
             # Count messages after last read (exclude sent messages)
             if contact:
                 # For contacts/rooms, use pubkey-based lookup
-                self.logger.debug(f"🔍 Unread query: pubkey={pubkey}, last_read={last_read}")
+                # Note: sender_pubkey in messages table may be truncated (12 chars)
+                # so we need to check if the full pubkey STARTS WITH the stored prefix
+                pubkey_prefix = pubkey[:12]  # First 12 chars to match truncated keys
+                self.logger.debug(f"🔍 Unread query: pubkey={pubkey}, prefix={pubkey_prefix}, last_read={last_read}")
                 cursor.execute("""
                     SELECT COUNT(*) FROM messages
-                    WHERE (sender_pubkey = ? OR sender_pubkey LIKE ?
-                        OR actual_sender_pubkey = ? OR actual_sender_pubkey LIKE ?
-                        OR signature = ? OR signature LIKE ?)
+                    WHERE ((sender_pubkey IS NOT NULL AND sender_pubkey != '' AND ? LIKE sender_pubkey || '%')
+                        OR (actual_sender_pubkey IS NOT NULL AND actual_sender_pubkey != '' AND ? LIKE actual_sender_pubkey || '%')
+                        OR (signature IS NOT NULL AND signature != '' AND ? LIKE signature || '%'))
                       AND received_at > ?
                       AND sender != 'Me'
-                """, (pubkey, f"{pubkey}%", pubkey, f"{pubkey}%", pubkey, f"{pubkey}%", last_read))
+                """, (pubkey, pubkey, pubkey, last_read))
             else:
                 # For channels, extract channel index from name and use channel field
                 # Names are like "Public" (channel 0) or "Channel 1" (channel 1)

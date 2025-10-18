@@ -357,7 +357,7 @@ class MeshTUI(App):
     
     def _update_single_contact_display(self, contact_name: str) -> None:
         """Update the display of a single contact in the list to reflect new unread count.
-        
+
         Args:
             contact_name: Name of the contact to update
         """
@@ -365,15 +365,18 @@ class MeshTUI(App):
             # Find the contact's ListItem widget
             contact_id = f"contact-{sanitize_id(contact_name)}"
             list_item = self.query_one(f"#{contact_id}", ListItem)
-            
-            # Get fresh contact data
+
+            # Get fresh contact data from memory
             contact = self.connection.get_contact_by_name(contact_name)
             if not contact:
                 return
-            
+
             contact_type = contact.get("type", 0)
             unread = self.connection.get_unread_count(contact_name)
-            last_seen = contact.get("last_seen", 0)
+
+            # Get fresh last_seen from database (it's updated when messages arrive)
+            db_contact = self.connection.db.get_contact_by_name(contact_name)
+            last_seen = db_contact.get("last_seen", 0) if db_contact else contact.get("last_seen", 0)
             
             # Calculate freshness color
             import time
