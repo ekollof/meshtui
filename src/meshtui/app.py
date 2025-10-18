@@ -142,6 +142,58 @@ class MeshTUI(App):
                                 )
                                 yield Button("Send", id="send-btn", variant="primary")
 
+                    with TabPane("Device Settings", id="settings-tab"):
+                        # Device configuration area
+                        with Vertical(id="settings-container"):
+                            yield Static("Device Configuration", id="settings-header")
+                            yield Static("Configure your connected MeshCore device", classes="help-text")
+
+                            # Device Info Section
+                            yield Static("[bold]Device Information[/bold]", classes="section-title")
+                            with Horizontal():
+                                yield Static("Device Name:", classes="label")
+                                yield Input(placeholder="Device name", id="settings-name-input")
+                                yield Button("Set Name", id="settings-name-btn", variant="primary")
+
+                            # Radio Configuration Section
+                            yield Static("[bold]Radio Configuration[/bold]", classes="section-title")
+                            with Horizontal():
+                                yield Static("TX Power (dBm):", classes="label")
+                                yield Input(placeholder="TX power", id="settings-tx-power-input")
+                                yield Button("Set", id="settings-tx-power-btn", variant="primary")
+
+                            with Horizontal():
+                                yield Static("Frequency (MHz):", classes="label")
+                                yield Input(placeholder="915.0", id="settings-freq-input")
+                                yield Static("Bandwidth (kHz):", classes="label")
+                                yield Input(placeholder="125.0", id="settings-bw-input")
+                            with Horizontal():
+                                yield Static("Spread Factor:", classes="label")
+                                yield Input(placeholder="7-12", id="settings-sf-input")
+                                yield Static("Coding Rate:", classes="label")
+                                yield Input(placeholder="5-8", id="settings-cr-input")
+                                yield Button("Set Radio", id="settings-radio-btn", variant="primary")
+
+                            # Location Section
+                            yield Static("[bold]Location[/bold]", classes="section-title")
+                            with Horizontal():
+                                yield Static("Latitude:", classes="label")
+                                yield Input(placeholder="0.0", id="settings-lat-input")
+                                yield Static("Longitude:", classes="label")
+                                yield Input(placeholder="0.0", id="settings-lon-input")
+                                yield Button("Set Coords", id="settings-coords-btn", variant="primary")
+
+                            # Device Actions Section
+                            yield Static("[bold]Device Actions[/bold]", classes="section-title")
+                            with Horizontal():
+                                yield Button("Reboot Device", id="settings-reboot-btn", variant="error")
+                                yield Button("Get Battery Info", id="settings-battery-btn")
+                                yield Button("Sync Time", id="settings-time-btn")
+
+                            # Status output area
+                            yield Static("Status:", classes="section-label")
+                            yield RichLog(id="settings-status-area", auto_scroll=True, wrap=True)
+
                     with TabPane("Node Management", id="node-tab"):
                         # Node management area (for repeaters and sensors)
                         with Horizontal():
@@ -219,6 +271,17 @@ class MeshTUI(App):
         self.message_input = self.query_one("#message-input", Input)
         self.log_panel = self.query_one("#log-panel", Log)
 
+        # Device settings UI references
+        self.settings_name_input = self.query_one("#settings-name-input", Input)
+        self.settings_tx_power_input = self.query_one("#settings-tx-power-input", Input)
+        self.settings_freq_input = self.query_one("#settings-freq-input", Input)
+        self.settings_bw_input = self.query_one("#settings-bw-input", Input)
+        self.settings_sf_input = self.query_one("#settings-sf-input", Input)
+        self.settings_cr_input = self.query_one("#settings-cr-input", Input)
+        self.settings_lat_input = self.query_one("#settings-lat-input", Input)
+        self.settings_lon_input = self.query_one("#settings-lon-input", Input)
+        self.settings_status_area = self.query_one("#settings-status-area", RichLog)
+
         # Node management UI references
         self.command_reference = self.query_one("#command-reference", RichLog)
         self.node_name_input = self.query_one("#node-name-input", Input)
@@ -227,7 +290,7 @@ class MeshTUI(App):
         self.node_command_input = self.query_one("#node-command-input", Input)
         self.node_status_target_input = self.query_one("#node-status-target-input", Input)
         self.node_status_area = self.query_one("#node-status-area", RichLog)
-        
+
         # Populate command reference cheat sheet
         self._populate_command_reference()
 
@@ -1301,6 +1364,180 @@ class MeshTUI(App):
             self.node_status_area.write(f"Status from {node_name}:\n{status_json}\n\n")
         else:
             self.node_status_area.write(f"✗ Failed to get status from {node_name}\n")
+
+    # Device Settings Handlers
+
+    @on(Button.Pressed, "#settings-name-btn")
+    async def set_device_name(self) -> None:
+        """Set the device name."""
+        name = self.settings_name_input.value.strip()
+        if not name:
+            self.settings_status_area.write("[red]Error: Device name cannot be empty[/red]")
+            return
+
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                return
+
+            self.settings_status_area.write(f"Setting device name to: {name}")
+            result = await self.connection.meshcore.commands.set_name(name)
+
+            if hasattr(result, 'type') and 'ERROR' in str(result.type):
+                self.settings_status_area.write(f"[red]✗ Failed to set name: {result}[/red]")
+            else:
+                self.settings_status_area.write(f"[green]✓ Device name set to: {name}[/green]")
+                self.settings_name_input.value = ""
+        except Exception as e:
+            self.logger.error(f"Error setting device name: {e}")
+            self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
+
+    @on(Button.Pressed, "#settings-tx-power-btn")
+    async def set_tx_power(self) -> None:
+        """Set the TX power."""
+        try:
+            power = int(self.settings_tx_power_input.value.strip())
+        except ValueError:
+            self.settings_status_area.write("[red]Error: TX power must be a number[/red]")
+            return
+
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                return
+
+            self.settings_status_area.write(f"Setting TX power to: {power} dBm")
+            result = await self.connection.meshcore.commands.set_tx_power(power)
+
+            if hasattr(result, 'type') and 'ERROR' in str(result.type):
+                self.settings_status_area.write(f"[red]✗ Failed to set TX power: {result}[/red]")
+            else:
+                self.settings_status_area.write(f"[green]✓ TX power set to: {power} dBm[/green]")
+                self.settings_tx_power_input.value = ""
+        except Exception as e:
+            self.logger.error(f"Error setting TX power: {e}")
+            self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
+
+    @on(Button.Pressed, "#settings-radio-btn")
+    async def set_radio_config(self) -> None:
+        """Set radio configuration parameters."""
+        try:
+            freq = float(self.settings_freq_input.value.strip())
+            bw = float(self.settings_bw_input.value.strip())
+            sf = int(self.settings_sf_input.value.strip())
+            cr = int(self.settings_cr_input.value.strip())
+        except ValueError:
+            self.settings_status_area.write("[red]Error: All radio parameters must be numbers[/red]")
+            return
+
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                return
+
+            self.settings_status_area.write(f"Setting radio: freq={freq}MHz, bw={bw}kHz, sf={sf}, cr={cr}")
+            result = await self.connection.meshcore.commands.set_radio(freq, bw, sf, cr)
+
+            if hasattr(result, 'type') and 'ERROR' in str(result.type):
+                self.settings_status_area.write(f"[red]✗ Failed to set radio config: {result}[/red]")
+            else:
+                self.settings_status_area.write(f"[green]✓ Radio configured successfully[/green]")
+                self.settings_freq_input.value = ""
+                self.settings_bw_input.value = ""
+                self.settings_sf_input.value = ""
+                self.settings_cr_input.value = ""
+        except Exception as e:
+            self.logger.error(f"Error setting radio config: {e}")
+            self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
+
+    @on(Button.Pressed, "#settings-coords-btn")
+    async def set_coordinates(self) -> None:
+        """Set device coordinates."""
+        try:
+            lat = float(self.settings_lat_input.value.strip())
+            lon = float(self.settings_lon_input.value.strip())
+        except ValueError:
+            self.settings_status_area.write("[red]Error: Latitude and longitude must be numbers[/red]")
+            return
+
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                return
+
+            self.settings_status_area.write(f"Setting coordinates: lat={lat}, lon={lon}")
+            result = await self.connection.meshcore.commands.set_coords(lat, lon)
+
+            if hasattr(result, 'type') and 'ERROR' in str(result.type):
+                self.settings_status_area.write(f"[red]✗ Failed to set coordinates: {result}[/red]")
+            else:
+                self.settings_status_area.write(f"[green]✓ Coordinates set successfully[/green]")
+                self.settings_lat_input.value = ""
+                self.settings_lon_input.value = ""
+        except Exception as e:
+            self.logger.error(f"Error setting coordinates: {e}")
+            self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
+
+    @on(Button.Pressed, "#settings-reboot-btn")
+    async def reboot_device(self) -> None:
+        """Reboot the connected device."""
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                return
+
+            self.settings_status_area.write("[yellow]⚠ Rebooting device...[/yellow]")
+            result = await self.connection.meshcore.commands.reboot()
+
+            self.settings_status_area.write("[green]✓ Reboot command sent. Device will reconnect shortly.[/green]")
+        except Exception as e:
+            self.logger.error(f"Error rebooting device: {e}")
+            self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
+
+    @on(Button.Pressed, "#settings-battery-btn")
+    async def get_battery_info(self) -> None:
+        """Get battery information."""
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                return
+
+            self.settings_status_area.write("Getting battery info...")
+            result = await self.connection.meshcore.commands.get_bat()
+
+            if hasattr(result, 'type') and 'ERROR' in str(result.type):
+                self.settings_status_area.write(f"[red]✗ Failed to get battery info: {result}[/red]")
+            elif hasattr(result, 'payload'):
+                bat_info = result.payload
+                voltage = bat_info.get('voltage', 'N/A')
+                percent = bat_info.get('percent', 'N/A')
+                self.settings_status_area.write(f"[green]Battery: {voltage}V ({percent}%)[/green]")
+            else:
+                self.settings_status_area.write(f"[yellow]Battery info: {result}[/yellow]")
+        except Exception as e:
+            self.logger.error(f"Error getting battery info: {e}")
+            self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
+
+    @on(Button.Pressed, "#settings-time-btn")
+    async def sync_time(self) -> None:
+        """Sync device time to current system time."""
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                return
+
+            import time
+            current_time = int(time.time())
+            self.settings_status_area.write(f"Setting device time to: {current_time}")
+            result = await self.connection.meshcore.commands.set_time(current_time)
+
+            if hasattr(result, 'type') and 'ERROR' in str(result.type):
+                self.settings_status_area.write(f"[red]✗ Failed to set time: {result}[/red]")
+            else:
+                self.settings_status_area.write(f"[green]✓ Device time synchronized[/green]")
+        except Exception as e:
+            self.logger.error(f"Error syncing time: {e}")
+            self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
 
     async def on_unmount(self) -> None:
         """Called when the app is unmounting."""
