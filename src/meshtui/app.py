@@ -558,6 +558,8 @@ class MeshTUI(App):
                     self.logger.info("Auto-connected via serial successfully")
                     self.logger.debug("About to update contacts in UI...")
                     await asyncio.wait_for(self.update_contacts(), timeout=5.0)
+                    self.logger.debug("About to update channels in UI...")
+                    await asyncio.wait_for(self.update_channels(), timeout=5.0)
                     self.logger.debug("About to refresh messages...")
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                     return
