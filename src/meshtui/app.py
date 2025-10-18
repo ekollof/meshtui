@@ -192,7 +192,7 @@ class MeshTUI(App):
 
                             # Status output area
                             yield Static("Status:", classes="section-label")
-                            yield RichLog(id="settings-status-area", auto_scroll=True, wrap=True)
+                            yield RichLog(id="settings-status-area", auto_scroll=True, wrap=True, markup=True)
 
                     with TabPane("Node Management", id="node-tab"):
                         # Node management area (for repeaters and sensors)
@@ -1366,6 +1366,50 @@ class MeshTUI(App):
             self.node_status_area.write(f"✗ Failed to get status from {node_name}\n")
 
     # Device Settings Handlers
+
+    async def populate_device_settings(self) -> None:
+        """Populate device settings with current values from connected device."""
+        try:
+            if not self.connection.is_connected():
+                self.settings_status_area.write("Not connected to device. Settings unavailable.")
+                return
+
+            self.settings_status_area.write("Loading current device settings...")
+
+            # Get device info using appstart command (includes more details than device_query)
+            result = await self.connection.meshcore.commands.send_appstart()
+
+            if hasattr(result, 'payload') and result.payload:
+                info = result.payload
+
+                # Display device name (if available)
+                device_name = info.get('name', info.get('long_name', ''))
+                if device_name:
+                    self.settings_name_input.placeholder = f"Current: {device_name}"
+
+                # Display model and version info
+                model = self.connection.device_info.get('model', 'Unknown') if self.connection.device_info else 'Unknown'
+                version = self.connection.device_info.get('ver', 'Unknown') if self.connection.device_info else 'Unknown'
+
+                self.settings_status_area.write(f"[green]Device: {model} ({version})[/green]")
+
+                # Note: Radio parameters (freq, bw, sf, cr) and TX power are not returned by appstart
+                # They would need separate commands to query, which MeshCore may not expose
+                self.settings_status_area.write("[dim]Note: Enter new values to update radio settings[/dim]")
+
+            else:
+                self.settings_status_area.write("[yellow]Could not retrieve device settings[/yellow]")
+
+        except Exception as e:
+            self.logger.error(f"Error loading device settings: {e}")
+            self.settings_status_area.write(f"[red]Error loading settings: {e}[/red]")
+
+    @on(TabbedContent.TabActivated)
+    async def on_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        """Handle tab activation events."""
+        if event.pane.id == "settings-tab":
+            # When Device Settings tab is opened, populate current settings
+            await self.populate_device_settings()
 
     @on(Button.Pressed, "#settings-name-btn")
     async def set_device_name(self) -> None:
