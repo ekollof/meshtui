@@ -21,7 +21,25 @@ from .transport import SerialTransport, BLETransport, TCPTransport, ConnectionTy
 
 
 class MeshConnection:
-    """Manages connection to MeshCore devices."""
+    """Manages connection to MeshCore devices and orchestrates domain managers.
+    
+    Architecture:
+    - Transport Layer: SerialTransport, BLETransport, TCPTransport (low-level connection)
+    - Manager Layer: ContactManager, ChannelManager, RoomManager (domain logic)
+    - Database Layer: MessageDatabase (persistence)
+    - Connection Layer (this class): Orchestrates managers, handles events, stores messages
+    
+    Responsibilities:
+    - Connection lifecycle (connect, disconnect, reconnect)
+    - Event handling and routing to managers
+    - Message persistence (sends via managers, stores in DB)
+    - Provides unified API for UI layer
+    
+    Delegates domain logic to:
+    - ContactManager: contact refresh, direct messaging
+    - ChannelManager: channel discovery, channel messaging  
+    - RoomManager: room authentication, room messaging
+    """
 
     def __init__(self):
         self.meshcore: Optional[MeshCore] = None
@@ -460,10 +478,16 @@ class MeshConnection:
         self.logger.info(f"Stored message from {sender_name}: {msg_data.get('text', '')[:50]}")
         
         # Trigger callback for UI notification
+        txt_type = msg_data.get('txt_type', 0)
         if self._message_callback:
             try:
                 msg_type = 'room' if is_room_message else 'contact'
-                self._message_callback(sender_name, msg_data.get('text', ''), msg_type)
+                self._message_callback(
+                    sender=sender_name, 
+                    text=msg_data.get('text', ''), 
+                    msg_type=msg_type,
+                    txt_type=txt_type  # Pass txt_type so UI can route command responses
+                )
             except Exception as e:
                 self.logger.error(f"Error in message callback: {e}")
 
@@ -616,6 +640,8 @@ class MeshConnection:
     async def send_message(self, recipient_name: str, message: str) -> Optional[Dict[str, Any]]:
         """Send a direct message to a contact.
         
+        Routes through ContactManager for consistency, then stores in database.
+        
         Args:
             recipient_name: The display name of the contact
             message: The message text to send
@@ -623,52 +649,37 @@ class MeshConnection:
         Returns:
             Dict with status info if successful, None if failed
         """
-        if not self.meshcore:
+        if not self.meshcore or not self.contacts:
             return None
 
         try:
-            # Look up the contact to get their pubkey/id
-            contact = self.get_contact_by_name(recipient_name)
-            if not contact:
-                self.logger.error(f"Contact '{recipient_name}' not found")
+            # Use ContactManager to send the message
+            status_info = await self.contacts.send_message(recipient_name, message)
+            
+            if not status_info:
                 return None
             
-            # Try to get the recipient identifier (public_key is the standard field)
-            recipient = contact.get("public_key") or contact.get("pubkey") or contact.get("id") or contact.get("pk")
-            if not recipient:
-                self.logger.error(f"Contact '{recipient_name}' has no public_key/id field")
-                self.logger.debug(f"Contact fields: {list(contact.keys())}")
-                return None
-            
-            self.logger.info(f"Sending message to {recipient_name} (key: {recipient[:16]}...)")
-            result = await self.meshcore.commands.send_msg(recipient, message)
-            
-            if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to send message: {result}")
-                return None
+            # Look up contact to get pubkey for storage
+            contact = self.contacts.get_by_name(recipient_name)
+            recipient_pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id") if contact else ""
             
             # Store sent message in database
             import time
             sent_msg = {
                 'type': 'contact',
-                'sender': 'Me',  # Mark as sent by me
-                'sender_pubkey': '',  # We don't have our own pubkey easily accessible
+                'sender': 'Me',
+                'sender_pubkey': '',
                 'recipient': recipient_name,
-                'recipient_pubkey': recipient,
+                'recipient_pubkey': recipient_pubkey,
                 'text': message,
                 'timestamp': int(time.time()),
                 'channel': None,
-                'sent': True,  # Flag to indicate this is outgoing
+                'sent': True,
             }
             self.messages.append(sent_msg)
             self.db.store_message(sent_msg)
             
-            # Return status information
-            status_info = {
-                'status': 'sent',
-                'result': result.payload if hasattr(result, 'payload') else {},
-            }
-            self.logger.info(f"Message sent successfully: {status_info}")
+            self.logger.info(f"Sent and stored message to {recipient_name}")
             return status_info
             
         except Exception as e:
@@ -803,57 +814,8 @@ class MeshConnection:
             import traceback
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
 
-    async def send_channel_message(self, channel: Union[str, int], message: str) -> bool:
-        """Send a message to a channel.
-        
-        Args:
-            channel: Channel index (int) or channel name (str)
-            message: Message text to send
-        """
-        if not self.meshcore:
-            return False
-
-        try:
-            # If channel is a string name, try to find its index
-            if isinstance(channel, str):
-                # Look up channel index by name
-                channels = await self.get_channels()
-                channel_idx = None
-                for ch_info in channels:
-                    if ch_info.get('name') == channel:
-                        channel_idx = ch_info.get('id', 0)
-                        break
-                
-                if channel_idx is None:
-                    self.logger.error(f"Channel '{channel}' not found")
-                    return False
-                
-                channel = channel_idx
-            
-            self.logger.info(f"Sending message to channel {channel}")
-            result = await self.meshcore.commands.send_chan_msg(channel, message)
-            if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to send channel message: {result}")
-                return False
-            
-            # Store sent channel message
-            import time
-            sent_msg = {
-                'type': 'channel',
-                'sender': 'Me',
-                'sender_pubkey': '',
-                'text': message,
-                'timestamp': int(time.time()),
-                'channel': channel,
-                'sent': True,
-            }
-            self.messages.append(sent_msg)
-            self.db.store_message(sent_msg)
-            
-            return True
-        except Exception as e:
-            self.logger.error(f"Error sending channel message: {e}")
-            return False
+    # NOTE: Removed duplicate send_channel_message() - now using the one at end of file
+    # which routes through ChannelManager for consistency
 
     async def get_messages(self) -> List[Dict[str, Any]]:
         """Get all messages (both received via events and polled)."""
@@ -1067,89 +1029,189 @@ class MeshConnection:
             return bool(self.connected and self.meshcore and getattr(self.meshcore, "is_connected", False))
         except Exception:
             return bool(self.connected)
+    
+    def is_room_admin(self, room_name: str) -> bool:
+        """Check if we have admin privileges in a room.
+        
+        Args:
+            room_name: Name of the room server
+            
+        Returns:
+            True if we're logged in as admin, False otherwise
+        """
+        if not self.rooms:
+            return False
+        return self.rooms.is_admin(room_name)
 
-    def test_logging(self):
-        """Test method to verify logging is working."""
-        self.logger.info("🧪 TEST: Logging system test message")
-        self.logger.debug("🧪 TEST: Debug logging test")
-        print("DEBUG: Direct print test from connection.py")
-        return "Logging test completed"
-
-    async def login_to_repeater(self, repeater_name: str, password: str) -> bool:
-        """Log into a repeater node."""
-        if not self.meshcore:
+    async def login_to_node(self, node_name: str, password: str) -> bool:
+        """Log into a node (repeater or room server).
+        
+        Works for type 2 (repeater) and type 3 (room server) nodes.
+        """
+        if not self.meshcore or not self.contacts:
             return False
 
         try:
-            result = await self.meshcore.commands.login(repeater_name, password)
-            if result.type == EventType.ERROR:
-                self.logger.error(
-                    f"Failed to login to repeater {repeater_name}: {result}"
-                )
+            # Get contact to verify it's a repeater or room
+            contact = self.contacts.get_by_name(node_name)
+            if not contact:
+                self.logger.error(f"Node '{node_name}' not found")
                 return False
-            self.logger.info(f"Successfully logged into repeater {repeater_name}")
-            return True
+            
+            node_type = contact.get('type', 0)
+            if node_type not in [2, 3]:  # repeater or room
+                self.logger.error(f"Node '{node_name}' is not a repeater or room server (type={node_type})")
+                return False
+            
+            # Use room login for type 3, regular login for type 2
+            if node_type == 3 and self.rooms:
+                # Room server - use RoomManager
+                return await self.rooms.login(node_name, contact, password)
+            else:
+                # Repeater - use direct login command
+                result = await self.meshcore.commands.login(node_name, password)
+                if result.type == EventType.ERROR:
+                    self.logger.error(f"Failed to login to {node_name}: {result}")
+                    return False
+                self.logger.info(f"Successfully logged into {node_name}")
+                return True
+                
         except Exception as e:
-            self.logger.error(f"Error logging into repeater {repeater_name}: {e}")
+            self.logger.error(f"Error logging into {node_name}: {e}")
             return False
+
+    async def logout_from_node(self, node_name: str) -> bool:
+        """Log out from a node (repeater or room server)."""
+        if not self.meshcore or not self.contacts:
+            return False
+
+        try:
+            # Get contact to determine type
+            contact = self.contacts.get_by_name(node_name)
+            if not contact:
+                self.logger.error(f"Node '{node_name}' not found")
+                return False
+            
+            node_type = contact.get('type', 0)
+            
+            # Use room logout for type 3, regular logout for type 2
+            if node_type == 3 and self.rooms:
+                # Room server - use RoomManager
+                room_key = contact.get('public_key') or contact.get('pubkey')
+                if room_key and room_key in self.rooms.logged_in_rooms:
+                    del self.rooms.logged_in_rooms[room_key]
+                    self.logger.info(f"Logged out from room {node_name}")
+                    return True
+                return False
+            else:
+                # Repeater
+                result = await self.meshcore.commands.logout(node_name)
+                if result.type == EventType.ERROR:
+                    self.logger.error(f"Failed to logout from {node_name}: {result}")
+                    return False
+                self.logger.info(f"Successfully logged out from {node_name}")
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Error logging out from {node_name}: {e}")
+            return False
+
+    async def send_command_to_node(self, node_name: str, command: str) -> bool:
+        """Send a command to a node (repeater, room server, or sensor).
+        
+        Uses the correct MeshCore API: send_cmd(contact, command_text)
+        Works for type 2 (repeater), 3 (room server), and 4 (sensor) nodes.
+        
+        For room servers: You must be logged in with admin password first.
+        The login happens in the Chat tab, and admin status is tracked by RoomManager.
+        """
+        if not self.meshcore or not self.contacts:
+            return False
+
+        try:
+            # Get contact
+            contact = self.contacts.get_by_name(node_name)
+            if not contact:
+                self.logger.error(f"Node '{node_name}' not found")
+                return False
+            
+            node_type = contact.get('type', 0)
+            if node_type not in [2, 3, 4]:  # repeater, room, or sensor
+                self.logger.error(f"Node '{node_name}' does not support commands (type={node_type})")
+                return False
+            
+            # For room servers, check if we're logged in and have admin rights
+            if node_type == 3:  # Room server
+                if not self.rooms or not self.rooms.is_logged_in(node_name):
+                    self.logger.error(f"Not logged into room '{node_name}'. Login via Chat tab first.")
+                    return False
+                is_admin = self.rooms.is_admin(node_name)
+                self.logger.debug(f"🔍 Admin check for '{node_name}': is_admin={is_admin}, room_admin_status={self.rooms.room_admin_status}")
+                if not is_admin:
+                    self.logger.warning(f"Not admin in room '{node_name}'. Admin commands may be rejected.")
+                    # Don't return False - let the command through, server will reject if needed
+            
+            # Use send_cmd API (correct API from meshcore-cli)
+            result = await self.meshcore.commands.send_cmd(contact, command)
+            if result.type == EventType.ERROR:
+                self.logger.error(f"Failed to send command to {node_name}: {result}")
+                return False
+                
+            self.logger.info(f"Command sent to {node_name}: {command}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error sending command to {node_name}: {e}")
+            return False
+
+    async def request_node_status(self, node_name: str) -> Optional[Dict[str, Any]]:
+        """Request status from a node (repeater, room server, or sensor).
+        
+        Works for type 2 (repeater), 3 (room server), and 4 (sensor) nodes.
+        """
+        if not self.meshcore or not self.contacts:
+            return None
+
+        try:
+            # Get contact
+            contact = self.contacts.get_by_name(node_name)
+            if not contact:
+                self.logger.error(f"Node '{node_name}' not found")
+                return None
+            
+            node_type = contact.get('type', 0)
+            if node_type not in [2, 3, 4]:
+                self.logger.error(f"Node '{node_name}' does not support status requests (type={node_type})")
+                return None
+            
+            result = await self.meshcore.commands.request_status(node_name)
+            if result.type == EventType.ERROR:
+                self.logger.error(f"Failed to get status from {node_name}: {result}")
+                return None
+                
+            self.logger.info(f"Received status from {node_name}")
+            return result.payload
+            
+        except Exception as e:
+            self.logger.error(f"Error requesting status from {node_name}: {e}")
+            return None
+
+    # Deprecated methods - kept for backward compatibility
+    async def login_to_repeater(self, repeater_name: str, password: str) -> bool:
+        """Deprecated: Use login_to_node() instead."""
+        return await self.login_to_node(repeater_name, password)
 
     async def logout_from_repeater(self, repeater_name: str) -> bool:
-        """Log out from a repeater node."""
-        if not self.meshcore:
-            return False
-
-        try:
-            result = await self.meshcore.commands.logout(repeater_name)
-            if result.type == EventType.ERROR:
-                self.logger.error(
-                    f"Failed to logout from repeater {repeater_name}: {result}"
-                )
-                return False
-            self.logger.info(f"Successfully logged out from repeater {repeater_name}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error logging out from repeater {repeater_name}: {e}")
-            return False
+        """Deprecated: Use logout_from_node() instead."""
+        return await self.logout_from_node(repeater_name)
 
     async def send_command_to_repeater(self, repeater_name: str, command: str) -> bool:
-        """Send a command to a repeater node (no ack)."""
-        if not self.meshcore:
-            return False
+        """Deprecated: Use send_command_to_node() instead."""
+        return await self.send_command_to_node(repeater_name, command)
 
-        try:
-            result = await self.meshcore.commands.send_command(repeater_name, command)
-            if result.type == EventType.ERROR:
-                self.logger.error(
-                    f"Failed to send command to repeater {repeater_name}: {result}"
-                )
-                return False
-            self.logger.info(f"Command sent to repeater {repeater_name}: {command}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error sending command to repeater {repeater_name}: {e}")
-            return False
-
-    async def request_repeater_status(
-        self, repeater_name: str
-    ) -> Optional[Dict[str, Any]]:
-        """Request status from a repeater node."""
-        if not self.meshcore:
-            return None
-
-        try:
-            result = await self.meshcore.commands.request_status(repeater_name)
-            if result.type == EventType.ERROR:
-                self.logger.error(
-                    f"Failed to get status from repeater {repeater_name}: {result}"
-                )
-                return None
-            self.logger.info(f"Received status from repeater {repeater_name}")
-            return result.payload
-        except Exception as e:
-            self.logger.error(
-                f"Error requesting status from repeater {repeater_name}: {e}"
-            )
-            return None
+    async def request_repeater_status(self, repeater_name: str) -> Optional[Dict[str, Any]]:
+        """Deprecated: Use request_node_status() instead."""
+        return await self.request_node_status(repeater_name)
 
     async def wait_for_repeater_message(
         self, timeout: int = 8
@@ -1198,102 +1260,55 @@ class MeshConnection:
             return []
 
     async def get_channels(self) -> List[Dict[str, Any]]:
-        """Get list of available channels."""
-        if not self.meshcore:
+        """Get list of available channels.
+        
+        Routes through ChannelManager for consistency.
+        """
+        if not self.channels:
             return []
-
-        try:
-            # Use stored channel info from events if available
-            if hasattr(self, 'channel_info_list') and self.channel_info_list:
-                channels = []
-                for ch_info in self.channel_info_list:
-                    ch_name = ch_info.get('channel_name', '')
-                    if ch_name:  # Only include channels with names
-                        channels.append({
-                            'id': ch_info.get('channel_idx', 0),
-                            'name': ch_name,
-                            **ch_info
-                        })
-                self.logger.info(f"Found {len(channels)} channels")
-                return channels
-            
-            # Fallback: try to get channel information via commands
-            channels = []
-            for channel_id in range(8):  # MeshCore supports up to 8 channels
-                try:
-                    channel_result = await asyncio.wait_for(
-                        self.meshcore.commands.get_channel(channel_id), timeout=2.0
-                    )
-                    if channel_result.type != EventType.ERROR:
-                        channel_info = channel_result.payload
-                        if channel_info and channel_info.get('channel_name'):
-                            channels.append({
-                                'id': channel_id,
-                                'name': channel_info.get('channel_name', 'Unknown'),
-                                **channel_info
-                            })
-                except asyncio.TimeoutError:
-                    continue
-                except Exception:
-                    continue
-            
-            self.logger.info(f"Found {len(channels)} channels")
-            return channels
-        except Exception as e:
-            self.logger.error(f"Error getting channels: {e}")
-            return []
+        
+        return await self.channels.get_channels()
 
     async def join_channel(self, channel_name: str, key: str = "") -> bool:
-        """Join a channel by name and optional key."""
-        if not self.meshcore:
+        """Join a channel by name and optional key.
+        
+        Routes through ChannelManager for consistency.
+        """
+        if not self.channels:
             return False
-
-        try:
-            # Find an available channel slot (0-7)
-            channels = await self.get_channels()
-            used_slots = [ch.get('id', -1) for ch in channels]
-            
-            available_slot = None
-            for slot in range(8):
-                if slot not in used_slots:
-                    available_slot = slot
-                    break
-            
-            if available_slot is None:
-                self.logger.error("No available channel slots")
-                return False
-            
-            # Set the channel
-            channel_config = {
-                'name': channel_name,
-                'key': key,
-                'id': available_slot
-            }
-            
-            result = await self.meshcore.commands.set_channel(available_slot, channel_config)
-            if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to join channel {channel_name}: {result}")
-                return False
-            
-            self.logger.info(f"Successfully joined channel {channel_name} on slot {available_slot}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error joining channel {channel_name}: {e}")
-            return False
+        
+        return await self.channels.join_channel(channel_name, key)
 
     async def send_channel_message(self, channel_id: int, message: str) -> bool:
-        """Send a message to a specific channel."""
-        if not self.meshcore:
+        """Send a message to a specific channel.
+        
+        Routes through ChannelManager for consistency, then stores in database.
+        """
+        if not self.meshcore or not self.channels:
             return False
 
         try:
-            result = await self.meshcore.commands.send_chan_msg(channel_id, message)
-            if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to send channel message: {result}")
+            # Use ChannelManager to send the message
+            success = await self.channels.send_message(channel_id, message)
+            
+            if not success:
                 return False
             
-            self.logger.info(f"Sent message to channel {channel_id}: {message}")
+            # Store sent channel message in database
+            import time
+            sent_msg = {
+                'type': 'channel',
+                'sender': 'Me',
+                'sender_pubkey': '',
+                'text': message,
+                'timestamp': int(time.time()),
+                'channel': channel_id,
+                'sent': True,
+            }
+            self.messages.append(sent_msg)
+            self.db.store_message(sent_msg)
+            
+            self.logger.info(f"Sent and stored message to channel {channel_id}: {message}")
             return True
             
         except Exception as e:

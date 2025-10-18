@@ -143,53 +143,64 @@ class MeshTUI(App):
                                 yield Button("Send", id="send-btn", variant="primary")
 
                     with TabPane("Node Management", id="node-tab"):
-                        # Node management area
+                        # Node management area (for repeaters and sensors)
                         with Horizontal():
-                            # Left: Node list
+                            # Left: Command cheat sheet
                             with Vertical(id="node-list-container"):
-                                yield Static("Available Nodes", id="nodes-header")
-                                yield ListView(id="nodes-list")
-                                yield Button(
-                                    "Refresh Nodes",
-                                    id="refresh-nodes-btn",
-                                    variant="primary",
-                                )
+                                yield Static("Command Reference", id="nodes-header")
+                                yield RichLog(id="command-reference", auto_scroll=False)
 
                             # Right: Node control panel
                             with Vertical(id="node-control-container"):
-                                yield Static("Node Control", id="node-control-header")
+                                yield Static("Node Administration", id="node-control-header")
+                                yield Static("For Repeaters (type 2) and Sensors (type 4)", classes="help-text")
+                                yield Static("Room admin: Login via Chat tab with admin password", classes="help-text")
+                                yield Static("Tip: Leave node name blank to use current chat contact", classes="help-text")
 
-                                # Login section
+                                # Login section (for repeaters only)
+                                yield Static("Repeater Login:", classes="section-label")
                                 with Horizontal():
                                     yield Input(
-                                        placeholder="Node name", id="node-name-input"
+                                        placeholder="Repeater name", id="node-name-input"
                                     )
                                     yield Input(
-                                        placeholder="Password", id="node-password-input"
+                                        placeholder="Password", id="node-password-input", password=True
                                     )
                                     yield Button(
                                         "Login", id="node-login-btn", variant="primary"
                                     )
 
-                                # Command section
+                                # Command section (works for repeaters, rooms if admin, sensors)
+                                yield Static("Send Command:", classes="section-label")
                                 with Horizontal():
                                     yield Input(
-                                        placeholder="Command", id="node-command-input"
+                                        placeholder="Node name (repeater/room/sensor)", id="node-cmd-target-input"
+                                    )
+                                    yield Input(
+                                        placeholder="Command (e.g., 'help', 'status')", id="node-command-input"
                                     )
                                     yield Button(
-                                        "Send Command",
+                                        "Send",
                                         id="node-send-cmd-btn",
                                         variant="primary",
                                     )
 
                                 # Status section
-                                yield Button(
-                                    "Get Status",
-                                    id="node-status-btn",
-                                    variant="primary",
-                                )
-                                yield TextArea(
-                                    "", id="node-status-area", read_only=True
+                                yield Static("Request Status:", classes="section-label")
+                                with Horizontal():
+                                    yield Input(
+                                        placeholder="Node name", id="node-status-target-input"
+                                    )
+                                    yield Button(
+                                        "Get Status",
+                                        id="node-status-btn",
+                                        variant="primary",
+                                    )
+                                
+                                # Output area
+                                yield Static("Output:", classes="section-label")
+                                yield RichLog(
+                                    id="node-status-area", auto_scroll=True, wrap=True
                                 )
 
             # Right sidebar - Logs
@@ -209,11 +220,16 @@ class MeshTUI(App):
         self.log_panel = self.query_one("#log-panel", Log)
 
         # Node management UI references
-        self.nodes_list = self.query_one("#nodes-list", ListView)
+        self.command_reference = self.query_one("#command-reference", RichLog)
         self.node_name_input = self.query_one("#node-name-input", Input)
         self.node_password_input = self.query_one("#node-password-input", Input)
+        self.node_cmd_target_input = self.query_one("#node-cmd-target-input", Input)
         self.node_command_input = self.query_one("#node-command-input", Input)
-        self.node_status_area = self.query_one("#node-status-area", TextArea)
+        self.node_status_target_input = self.query_one("#node-status-target-input", Input)
+        self.node_status_area = self.query_one("#node-status-area", RichLog)
+        
+        # Populate command reference cheat sheet
+        self._populate_command_reference()
 
         # Setup logging handler now that we have the log panel
         self.log_handler = TextualLogHandler(self)
@@ -236,11 +252,79 @@ class MeshTUI(App):
         
         # Start periodic message refresh (every 2 seconds)
         self.set_interval(2.0, self.periodic_message_refresh)
+    
+    def _populate_command_reference(self):
+        """Populate the command reference cheat sheet."""
+        from rich.text import Text
+        
+        self.command_reference.write(Text("Common Commands:", style="bold yellow"))
+        self.command_reference.write("")
+        
+        # General commands
+        self.command_reference.write(Text("Information:", style="bold cyan"))
+        self.command_reference.write("  status    - System status")
+        self.command_reference.write("  ver       - Firmware version")
+        self.command_reference.write("  clock     - Show current time")
+        self.command_reference.write("")
+        
+        # Clock commands
+        self.command_reference.write(Text("Time Sync:", style="bold cyan"))
+        self.command_reference.write("  clock sync      - Sync time")
+        self.command_reference.write("  clock set <ts>  - Set Unix timestamp")
+        self.command_reference.write("")
+        
+        # Room commands
+        self.command_reference.write(Text("Room Admin:", style="bold cyan"))
+        self.command_reference.write("  list_users  - Show logged in users")
+        self.command_reference.write("  kick <user> - Kick user from room")
+        self.command_reference.write("  ban <user>  - Ban user from room")
+        self.command_reference.write("")
+        
+        # Network commands
+        self.command_reference.write(Text("Network:", style="bold cyan"))
+        self.command_reference.write("  neighbors  - Show nearby nodes")
+        self.command_reference.write("  path       - Show routing path")
+        self.command_reference.write("")
+        
+        # Radio config
+        self.command_reference.write(Text("Radio Settings:", style="bold cyan"))
+        self.command_reference.write("  get_config        - Show config")
+        self.command_reference.write("  set lora_sf <n>   - Spreading factor")
+        self.command_reference.write("  set lora_bw <khz> - Bandwidth")
+        self.command_reference.write("  set tx_power <n>  - TX power")
+        self.command_reference.write("  reboot            - Reboot node")
 
-    def _on_new_message(self, sender: str, text: str, msg_type: str, channel_name: Optional[str] = None):
-        """Callback when a new message arrives."""
+    def _on_new_message(self, sender: str, text: str, msg_type: str, channel_name: Optional[str] = None, txt_type: int = 0):
+        """Callback when a new message arrives.
+        
+        Args:
+            sender: Name of the sender
+            text: Message text
+            msg_type: Type of message ('contact', 'room', or 'channel')
+            channel_name: Channel name if msg_type is 'channel'
+            txt_type: Text type (0=regular message, 1=command response)
+        """
+        # Route command responses (txt_type=1) to Node Management output
+        if txt_type == 1:
+            self.logger.debug(f"📋 Command response from {sender}: {text}")
+            try:
+                from rich.text import Text
+                # Create Rich Text with proper styling
+                output = Text()
+                if sender:
+                    output.append(sender, style="cyan")
+                    output.append(": ")
+                output.append(text)
+                self.node_status_area.write(output)
+            except Exception as e:
+                self.logger.error(f"Failed to display command response: {e}")
+            # Return early - don't show command responses in chat
+            return
+        
         # Check if this message is for the current view
         is_current_view = False
+        
+        self.logger.debug(f"🔍 Message callback: sender={sender}, msg_type={msg_type}, channel={channel_name}, current_contact={self.current_contact}, current_channel={self.current_channel}")
         
         if (msg_type == 'contact' or msg_type == 'room') and self.current_contact == sender:
             is_current_view = True
@@ -248,19 +332,67 @@ class MeshTUI(App):
             is_current_view = (self.current_channel == channel_name or 
                              (channel_name == "Public" and self.current_channel == "Public"))
         
+        self.logger.debug(f"🔍 is_current_view={is_current_view}")
+        
         if is_current_view:
             # Message is for current view - refresh immediately and mark as read
             self.logger.debug(f"New message in current view from {sender}")
             self.connection.mark_as_read(sender)
             asyncio.create_task(self.refresh_messages())
         else:
-            # Message is from another contact/channel - show notification and update list
+            # Message is from another contact/channel - show notification and update that contact's unread indicator
             source = channel_name if msg_type == 'channel' else sender
             preview = text[:50] + "..." if len(text) > 50 else text
             self.logger.info(f"💬 New message from {source}: {preview}")
             self.notify(f"New message from {source}", title="Message Received", severity="information")
-            # Update contact list to show new unread count
-            asyncio.create_task(self.update_contacts())
+            # Update just this contact's display to show new unread count
+            if msg_type in ('contact', 'room'):
+                self.logger.debug(f"🔍 Calling _update_single_contact_display for {sender}")
+                self._update_single_contact_display(sender)
+    
+    def _update_single_contact_display(self, contact_name: str) -> None:
+        """Update the display of a single contact in the list to reflect new unread count.
+        
+        Args:
+            contact_name: Name of the contact to update
+        """
+        try:
+            # Find the contact's ListItem widget
+            contact_id = f"contact-{sanitize_id(contact_name)}"
+            list_item = self.query_one(f"#{contact_id}", ListItem)
+            
+            # Get fresh contact data
+            contact = self.connection.get_contact_by_name(contact_name)
+            if not contact:
+                return
+            
+            contact_type = contact.get("type", 0)
+            unread = self.connection.get_unread_count(contact_name)
+            last_seen = contact.get("last_seen", 0)
+            
+            # Calculate freshness color
+            import time
+            age_seconds = time.time() - last_seen if last_seen > 0 else 999999
+            if age_seconds < 300:  # 5 minutes
+                color = "green"
+            elif age_seconds < 3600:  # 1 hour
+                color = "yellow"
+            else:
+                color = "red"
+            
+            # Format display
+            type_icon = "🏠" if contact_type == 3 else ""
+            if unread > 0:
+                display_text = f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
+            else:
+                display_text = f"[{color}]○[/{color}] {type_icon}{contact_name}"
+            
+            # Update the Static widget inside the ListItem
+            static = list_item.query_one(Static)
+            static.update(display_text)
+            self.logger.debug(f"Updated contact display for {contact_name}: unread={unread}")
+        except Exception as e:
+            self.logger.debug(f"Could not update contact display for {contact_name}: {e}")
 
     async def auto_connect(self) -> None:
         """Attempt to auto-connect to a meshcore device."""
@@ -435,29 +567,6 @@ class MeshTUI(App):
             import traceback
             self.logger.debug(traceback.format_exc())
 
-        if self.connection.is_connected():
-            self.logger.info(
-                "🧪 TEST: Connection is active, testing connection logging"
-            )
-            test_result = self.connection.test_logging()
-            self.logger.info(f"🧪 TEST: Connection test result: {test_result}")
-        else:
-            self.logger.warning("🧪 TEST: No active connection")
-
-        # Test UI updates
-        self.logger.info("🧪 TEST: Testing UI updates")
-        await self.update_contacts()
-        await self.refresh_messages()
-
-        # Test log panel directly
-        if hasattr(self, "log_panel") and self.log_panel:
-            self.log_panel.write(
-                "🧪 DIRECT LOG PANEL TEST: This should appear in logs\n"
-            )
-            self.logger.info("🧪 TEST: Direct log panel write attempted")
-
-        self.logger.info("🧪 TEST: Logging test completed")
-
     @on(Button.Pressed, "#send-btn")
     async def send_message(self) -> None:
         """Send a message or command."""
@@ -480,12 +589,16 @@ class MeshTUI(App):
                         self.chat_area.write(f"[green]✓ Logged in successfully![/green]")
                         self.chat_area.write(f"[dim]Loading queued messages...[/dim]")
                         self._awaiting_room_password = False
+                        # Restore normal input mode
+                        self.message_input.password = False
+                        self.message_input.placeholder = "Type a message..."
                         self.message_input.value = ""
                         # Reload the contact messages (now includes room messages)
                         await self.load_contact_messages(self.current_contact)
                         self.chat_area.write(f"[dim]Ready to chat![/dim]")
                     else:
                         self.chat_area.write(f"[red]✗ Login failed. Try again.[/red]")
+                        # Keep password mode on for retry
                     self.message_input.value = ""
                     return
                 
@@ -514,36 +627,28 @@ class MeshTUI(App):
                     else:
                         self.chat_area.write(f"[dim]{timestamp}[/dim] [green]✓ Sent[/green]")
                     self.message_input.value = ""
+                    # Update contact display to refresh last_seen indicator
+                    self._update_single_contact_display(self.current_contact)
                 else:
                     self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Failed to send[/red]")
             elif self.current_channel:
                 # Sending to a channel
                 if self.current_channel == "Public":
                     # Public is channel 0
-                    from datetime import datetime
-                    timestamp = datetime.now().strftime("%H:%M:%S")
-                    self.chat_area.write(
-                        f"[dim]{timestamp}[/dim] [blue]You → Public:[/blue] {message} [yellow](sending...)[/yellow]"
-                    )
                     success = await self.connection.send_channel_message(0, message)
-                    if success:
-                        self.chat_area.write(f"[dim]{timestamp}[/dim] [green]✓ Sent to public channel[/green]")
-                        self.message_input.value = ""
-                    else:
-                        self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Failed to send[/red]")
                 else:
                     success = await self.connection.send_channel_message(
                         self.current_channel, message
                     )
-                    if success:
-                        from datetime import datetime
-                        timestamp = datetime.now().strftime("%H:%M:%S")
-                        self.chat_area.write(
-                            f"[dim]{timestamp}[/dim] [blue]You → #{self.current_channel}:[/blue] {message}"
-                        )
-                        self.message_input.value = ""
-                    else:
-                        self.chat_area.write("[red]Failed to send channel message[/red]")
+                
+                if success:
+                    self.message_input.value = ""
+                    # Refresh messages to show the sent message
+                    await self.refresh_messages()
+                else:
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Failed to send channel message[/red]")
             else:
                 self.chat_area.write("[yellow]No contact or channel selected. Click a contact or channel to start chatting.[/yellow]")
         except Exception as e:
@@ -559,14 +664,15 @@ class MeshTUI(App):
         """Handle contact selection."""
         if event.item and event.item.id:
             # Look up the contact name from the ID mapping
+            self.logger.debug(f"🔍 Contact selected: item.id={event.item.id}, id_map={self._contact_id_map}")
             contact_name = self._contact_id_map.get(event.item.id)
             if not contact_name:
                 self.logger.warning(f"No contact found for ID: {event.item.id}")
                 return
             
+            self.logger.info(f"Selected contact: {contact_name} (from ID: {event.item.id})")
             self.current_contact = contact_name
             self.current_channel = None  # Clear channel selection
-            self.logger.info(f"Selected contact: {contact_name}")
             
             # Mark messages as read
             self.connection.mark_as_read(contact_name)
@@ -583,20 +689,32 @@ class MeshTUI(App):
                     self.logger.info(f"{contact_name} is a room server, waiting for password")
                     # Set a flag to indicate we're waiting for password
                     self._awaiting_room_password = True
+                    # Enable password mode on message input
+                    self.message_input.password = True
+                    self.message_input.placeholder = "Enter room password..."
                     self.message_input.focus()
                     return
             
             # Regular contact or already logged in
             self._awaiting_room_password = False
+            # Disable password mode
+            self.message_input.password = False
+            self.message_input.placeholder = "Type a message..."
             
             # Update chat area header
+            # Clear the chat area completely
             self.chat_area.clear()
+            self.chat_area.lines.clear()  # Also clear internal lines buffer
+            
             if contact and contact.get('type') == 3:
                 self.chat_area.write(f"[bold cyan]Chat with {contact_name} (Room Server)[/bold cyan]\n")
             elif contact and contact.get('type') == 2:
                 self.chat_area.write(f"[bold cyan]Chat with {contact_name} (Repeater)[/bold cyan]\n")
             else:
                 self.chat_area.write(f"[bold cyan]Chat with {contact_name}[/bold cyan]\n")
+            
+            # Force refresh to ensure UI updates
+            self.chat_area.refresh()
             
             # Load message history for this contact
             await self.load_contact_messages(contact_name)
@@ -682,16 +800,37 @@ class MeshTUI(App):
                             else:
                                 dt = datetime.fromtimestamp(timestamp)
                             time_str = dt.strftime("%H:%M:%S")
-                        except:
+                            self.logger.debug(f"Timestamp {timestamp} -> {time_str}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to format timestamp {timestamp}: {e}")
                             time_str = str(timestamp)
                     else:
                         time_str = "--:--:--"
+                        self.logger.debug(f"No timestamp for message: {msg.get('text', '')[:20]}")
                     
                     sender = msg.get('sender', 'Unknown')
+                    sender_pubkey = msg.get('sender_pubkey', '')
                     actual_sender = msg.get('actual_sender')  # For room messages
+                    actual_sender_pubkey = msg.get('actual_sender_pubkey', '')
                     msg_type = msg.get('type', 'contact')
                     text = msg.get('text', '')
                     signature = msg.get('signature', '')
+                    
+                    # Check if this message is from me by comparing pubkeys
+                    is_from_me = False
+                    my_contact = self.connection.db.get_contact_by_me() if self.connection else None
+                    if my_contact:
+                        my_pubkey = my_contact.get('pubkey')
+                        if my_pubkey:
+                            # Check if any of the sender fields match our pubkey (prefix or full)
+                            if sender_pubkey and (sender_pubkey == my_pubkey or my_pubkey.startswith(sender_pubkey)):
+                                is_from_me = True
+                            elif actual_sender_pubkey and (actual_sender_pubkey == my_pubkey or my_pubkey.startswith(actual_sender_pubkey)):
+                                is_from_me = True
+                            elif signature and (signature == my_pubkey or my_pubkey.startswith(signature)):
+                                is_from_me = True
+                    elif sender == "Me":
+                        is_from_me = True
                     
                     # Check if sender is a room server (type 3)
                     sender_contact = self.connection.get_contact_by_name(sender)
@@ -713,13 +852,14 @@ class MeshTUI(App):
                     elif msg_type == "room" or is_room_server:
                         # Room message without sender info - show as anonymous
                         self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/cyan] {text}\n")
-                    elif sender == "Me":
-                        # Message sent by me
+                    elif is_from_me:
+                        # Message sent by me (based on pubkey)
                         self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n")
                     elif sender == contact_name:
                         self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {text}\n")
                     else:
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n")
+                        # Show actual sender name (could be someone else in a room conversation)
+                        self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {text}\n")
             else:
                 self.chat_area.write("[dim]No message history[/dim]")
         except Exception as e:
@@ -764,6 +904,12 @@ class MeshTUI(App):
         """Update the contacts list in the UI."""
         import asyncio
 
+        # Prevent concurrent updates
+        if hasattr(self, '_updating_contacts') and self._updating_contacts:
+            self.logger.debug("Contact update already in progress, skipping")
+            return
+        
+        self._updating_contacts = True
         try:
             self.logger.debug("Starting contact update process...")
             await asyncio.wait_for(self.connection.refresh_contacts(), timeout=5.0)
@@ -773,6 +919,18 @@ class MeshTUI(App):
             # Clear and repopulate contacts list
             self.contacts_list.clear()
             self._contact_id_map.clear()  # Clear the mapping
+            
+            # Also remove any existing widgets with these IDs
+            for contact in contacts:
+                contact_name = contact.get("name", "Unknown")
+                contact_id = f"contact-{sanitize_id(contact_name)}"
+                try:
+                    existing = self.query_one(f"#{contact_id}", ListItem)
+                    if existing:
+                        existing.remove()
+                except Exception:
+                    pass  # Widget doesn't exist, that's fine
+            
             for contact in contacts:
                 contact_name = contact.get("name", "Unknown")
                 contact_type = contact.get("type", 0)
@@ -782,6 +940,7 @@ class MeshTUI(App):
                 
                 # Determine freshness color based on last_seen
                 last_seen = contact.get("last_seen", 0)
+                self.logger.debug(f"🔍 Contact {contact_name}: unread={unread}, last_seen={last_seen}")
                 import time
                 age_seconds = time.time() - last_seen if last_seen > 0 else 999999
                 
@@ -816,6 +975,8 @@ class MeshTUI(App):
             import traceback
 
             self.logger.debug(f"Contact update traceback: {traceback.format_exc()}")
+        finally:
+            self._updating_contacts = False
 
     async def update_channels(self) -> None:
         """Update the channels list in the UI."""
@@ -890,28 +1051,74 @@ class MeshTUI(App):
                 self.logger.debug("No contact or channel selected")
             
             # Display messages
+            from datetime import datetime
             for msg in messages:
+                # Format timestamp
+                timestamp = msg.get('timestamp', 0)
+                if timestamp and timestamp > 0:
+                    try:
+                        if isinstance(timestamp, str):
+                            dt = datetime.fromisoformat(timestamp)
+                        else:
+                            dt = datetime.fromtimestamp(timestamp)
+                        time_str = dt.strftime("%H:%M:%S")
+                    except Exception as e:
+                        self.logger.error(f"Failed to format timestamp {timestamp}: {e}")
+                        time_str = str(timestamp)
+                else:
+                    time_str = "--:--:--"
+                
                 sender = msg.get("sender", "Unknown")
+                sender_pubkey = msg.get("sender_pubkey", "")
                 content = msg.get("text", "")
                 msg_type = msg.get("type", "contact")
                 actual_sender = msg.get("actual_sender")  # For room messages
+                actual_sender_pubkey = msg.get("actual_sender_pubkey", "")
+                signature = msg.get('signature', '')
                 
-                self.logger.debug(f"Displaying message: type={msg_type}, sender={sender}, actual_sender={actual_sender}, text={content[:30]}")
+                # Check if this message is from me by comparing pubkeys
+                is_from_me = False
+                my_contact = self.connection.db.get_contact_by_me() if self.connection else None
+                if my_contact:
+                    my_pubkey = my_contact.get('pubkey')
+                    if my_pubkey:
+                        # Check if any of the sender fields match our pubkey (prefix or full)
+                        if sender_pubkey and (sender_pubkey == my_pubkey or my_pubkey.startswith(sender_pubkey)):
+                            is_from_me = True
+                        elif actual_sender_pubkey and (actual_sender_pubkey == my_pubkey or my_pubkey.startswith(actual_sender_pubkey)):
+                            is_from_me = True
+                        elif signature and (signature == my_pubkey or my_pubkey.startswith(signature)):
+                            is_from_me = True
+                elif sender == "Me":
+                    is_from_me = True
                 
-                # Format sender display
-                if msg_type == "room" and actual_sender:
-                    # Room message - show "Room / Sender: message"
+                # Check if sender is a room server (type 3)
+                sender_contact = self.connection.get_contact_by_name(sender)
+                is_room_server = sender_contact and sender_contact.get('type') == 3
+                
+                # If no actual_sender but we have a signature, try to decode it
+                if is_room_server and not actual_sender and signature:
+                    sig_contact = self.connection.contacts.get_by_key(signature) if self.connection.contacts else None
+                    if sig_contact:
+                        actual_sender = sig_contact.get('adv_name') or sig_contact.get('name', signature)
+                    else:
+                        actual_sender = signature[:8]  # Show short key if unknown
+                
+                # Format sender display with timestamps
+                if (msg_type == "room" or is_room_server) and actual_sender:
                     display_sender = f"{sender} / {actual_sender}"
-                    self.chat_area.write(f"[cyan]{display_sender}:[/cyan] {content}\n")
-                elif msg_type == "room":
-                    # Room message without sender info
-                    self.chat_area.write(f"[cyan]{sender}:[/cyan] {content}\n")
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {content}\n")
+                elif msg_type == "room" or is_room_server:
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/cyan] {content}\n")
+                elif sender == "Me":
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {content}\n")
+                elif self.current_contact and sender == self.current_contact:
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n")
                 elif msg_type == "channel":
-                    self.chat_area.write(f"[yellow]{sender}:[/yellow] {content}\n")
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [yellow]{sender}:[/yellow] {content}\n")
                 else:
-                    self.chat_area.write(f"[green]{sender}:[/green] {content}\n")
-                    
-                self.logger.debug(f"Added message to chat: {sender}: {content[:50]}...")
+                    # Show actual sender name (could be someone else in a room conversation)
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n")
                 
         except asyncio.TimeoutError:
             self.logger.error("Timeout refreshing messages")
@@ -956,84 +1163,103 @@ class MeshTUI(App):
         except Exception as e:
             self.logger.debug(f"Periodic refresh error: {e}")
 
-    @on(Button.Pressed, "#refresh-nodes-btn")
-    async def refresh_nodes(self) -> None:
-        """Refresh the available nodes list."""
-        self.logger.info("Refreshing nodes list...")
-        try:
-            nodes = await self.connection.get_available_nodes()
-
-            # Clear and repopulate nodes list
-            self.nodes_list.clear()
-            for node in nodes:
-                node_name = node.get("name", "Unknown")
-                self.nodes_list.append(ListItem(Static(node_name)))
-
-            self.logger.info(f"Refreshed {len(nodes)} nodes in UI")
-        except Exception as e:
-            self.logger.error(f"Failed to refresh nodes: {e}")
-
     @on(Button.Pressed, "#node-login-btn")
     async def node_login(self) -> None:
-        """Log into a node."""
+        """Log into a repeater node."""
         node_name = self.node_name_input.value.strip()
         password = self.node_password_input.value.strip()
 
         if not node_name or not password:
-            self.node_status_area.insert("Please enter both node name and password\n")
+            self.node_status_area.write("Please enter both repeater name and password\n")
             return
 
-        self.logger.info(f"Logging into node: {node_name}")
-        success = await self.connection.login_to_repeater(node_name, password)
+        self.logger.info(f"Logging into repeater: {node_name}")
+        success = await self.connection.login_to_node(node_name, password)
 
         if success:
-            self.node_status_area.insert(f"Successfully logged into {node_name}\n")
-            self.node_name_input.value = ""
-            self.node_password_input.value = ""
+            self.node_status_area.write(f"✓ Successfully logged into {node_name}\n")
+            self.node_password_input.value = ""  # Clear password
         else:
-            self.node_status_area.insert(f"Failed to log into {node_name}\n")
+            self.node_status_area.write(f"✗ Failed to log into {node_name}\n")
 
     @on(Button.Pressed, "#node-send-cmd-btn")
     async def node_send_command(self) -> None:
-        """Send a command to the logged-in node."""
+        """Send a command to a node (repeater, room server, or sensor)."""
         command = self.node_command_input.value.strip()
+        node_name = self.node_cmd_target_input.value.strip()
+
+        # If no node name specified, use current contact from chat
+        if not node_name and self.current_contact:
+            node_name = self.current_contact
 
         if not command:
-            self.node_status_area.insert("Please enter a command\n")
+            self.node_status_area.write("Please enter a command\n")
             return
-
-        # For now, assume the node name is still in the input field
-        node_name = self.node_name_input.value.strip()
+            
         if not node_name:
-            self.node_status_area.insert("Please specify node name first\n")
+            self.node_status_area.write("Please specify target node name or select a contact in Chat tab\n")
             return
 
         self.logger.info(f"Sending command to {node_name}: {command}")
-        success = await self.connection.send_command_to_repeater(node_name, command)
+        success = await self.connection.send_command_to_node(node_name, command)
 
         if success:
-            self.node_status_area.insert(f"Command sent to {node_name}: {command}\n")
+            self.node_status_area.write(f"✓ Sent to {node_name}: {command}\n")
             self.node_command_input.value = ""
         else:
-            self.node_status_area.insert(f"Failed to send command to {node_name}\n")
+            self.node_status_area.write(f"✗ Failed to send command to {node_name}\n")
+    
+    @on(Input.Submitted, "#node-command-input")
+    async def node_command_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in command input - same as clicking Send button."""
+        # Prevent default behavior
+        event.prevent_default()
+        
+        self.logger.info("🔍 DEBUG: node-command-input submitted!")
+        command = self.node_command_input.value.strip()
+        node_name = self.node_cmd_target_input.value.strip()
+        
+        self.logger.info(f"🔍 DEBUG: command='{command}', node_name='{node_name}'")
+
+        # If no node name specified, use current contact from chat
+        if not node_name and self.current_contact:
+            node_name = self.current_contact
+
+        if not command:
+            self.node_status_area.write("Please enter a command\n")
+            return
+            
+        if not node_name:
+            self.node_status_area.write("Please specify target node name or select a contact in Chat tab\n")
+            return
+
+        self.logger.info(f"Sending command to {node_name}: {command}")
+        success = await self.connection.send_command_to_node(node_name, command)
+
+        if success:
+            self.node_status_area.write(f"✓ Sent to {node_name}: {command}\n")
+            self.node_command_input.value = ""
+        else:
+            self.node_status_area.write(f"✗ Failed to send command to {node_name}\n")
 
     @on(Button.Pressed, "#node-status-btn")
     async def node_get_status(self) -> None:
         """Get status from a node."""
-        node_name = self.node_name_input.value.strip()
+        node_name = self.node_status_target_input.value.strip()
 
         if not node_name:
-            self.node_status_area.insert("Please specify node name\n")
+            self.node_status_area.write("Please specify node name\n")
             return
 
-        self.logger.info(f"Requesting status from node: {node_name}")
-        status = await self.connection.request_repeater_status(node_name)
+        self.logger.info(f"Requesting status from {node_name}")
+        status = await self.connection.request_node_status(node_name)
 
         if status:
-            self.node_status_area.insert(f"Status from {node_name}:\n")
-            self.node_status_area.insert(f"{json.dumps(status, indent=2)}\n")
+            import json
+            status_json = json.dumps(status, indent=2)
+            self.node_status_area.write(f"Status from {node_name}:\n{status_json}\n\n")
         else:
-            self.node_status_area.insert(f"Failed to get status from {node_name}\n")
+            self.node_status_area.write(f"✗ Failed to get status from {node_name}\n")
 
     async def on_unmount(self) -> None:
         """Called when the app is unmounting."""

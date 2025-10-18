@@ -249,11 +249,32 @@ To contribute or modify MeshTUI:
 
 ```
 src/meshtui/
-├── app.py          # Main Textual application
-├── app.css         # UI styling
-├── __init__.py     # Package initialization
-└── __main__.py     # Entry point
+├── app.py           # Main Textual application (UI layer)
+├── app.css          # UI styling
+├── connection.py    # Connection orchestration and lifecycle
+├── transport.py     # BLE, Serial, TCP transport layers
+├── contact.py       # Contact/node management
+├── channel.py       # Channel operations
+├── room.py          # Room server handling
+├── database.py      # SQLite message and contact persistence
+├── __init__.py      # Package initialization
+└── __main__.py      # Entry point
+
+docs/
+└── meshcore-api/    # MeshCore API reference (copied from installed package)
+    ├── README.md    # API documentation and examples
+    ├── commands/    # Command modules (messaging, contacts, device)
+    └── *.py         # Core API files
 ```
+
+### API Reference
+
+For MeshCore API reference, see `docs/meshcore-api/README.md`. This includes:
+- Complete API documentation
+- Command examples for messaging, contacts, and device management
+- Event types and handling
+- Room server administration
+- Contact type definitions
 
 ## License
 

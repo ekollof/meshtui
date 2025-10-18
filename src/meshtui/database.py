@@ -31,15 +31,14 @@ class MessageDatabase:
             cursor = self.conn.cursor()
             
             # Messages table
-            # TODO: Refactor to use pubkey-based lookups instead of names
-            # Names can change, but pubkeys are immutable. Currently storing both
-            # sender (name) and sender_pubkey for backward compatibility.
+            # Uses pubkey-based lookups for robustness against name changes
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     type TEXT NOT NULL,
                     sender TEXT NOT NULL,
                     sender_pubkey TEXT,
+                    recipient_pubkey TEXT,
                     actual_sender TEXT,
                     actual_sender_pubkey TEXT,
                     text TEXT NOT NULL,
@@ -68,18 +67,39 @@ class MessageDatabase:
                 )
             """)
             
-            # Last read tracking table
+            # Last read tracking table - now uses pubkey for contacts, name for channels
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS last_read (
-                    contact_or_channel TEXT PRIMARY KEY,
+                    identifier TEXT PRIMARY KEY,
+                    identifier_type TEXT NOT NULL,
                     last_read_timestamp INTEGER NOT NULL
                 )
             """)
             
             # Create indexes for efficient queries
             cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_messages_sender 
-                ON messages(sender)
+                CREATE INDEX IF NOT EXISTS idx_messages_sender_pubkey 
+                ON messages(sender_pubkey)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_messages_actual_sender_pubkey 
+                ON messages(actual_sender_pubkey)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_messages_signature 
+                ON messages(signature)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_messages_type 
+                ON messages(type)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_last_read_identifier 
+                ON last_read(identifier, identifier_type)
             """)
             
             cursor.execute("""
@@ -102,12 +122,62 @@ class MessageDatabase:
                 ON contacts(name)
             """)
             
+            # Apply migrations for existing databases
+            self._apply_migrations(cursor)
+            
             self.conn.commit()
-            self.logger.info("Database initialized successfully")
+            self.logger.info(f"Database initialized at {self.db_path}")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             raise
+    
+    def _apply_migrations(self, cursor):
+        """Apply schema migrations for existing databases."""
+        try:
+            # Check if recipient_pubkey column exists
+            cursor.execute("PRAGMA table_info(messages)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'recipient_pubkey' not in columns:
+                self.logger.info("Migrating database: adding recipient_pubkey column")
+                cursor.execute("ALTER TABLE messages ADD COLUMN recipient_pubkey TEXT")
+                self.conn.commit()
+                self.logger.info("Migration complete: recipient_pubkey column added")
+            
+            # Check if last_read has new schema
+            cursor.execute("PRAGMA table_info(last_read)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'identifier_type' not in columns:
+                self.logger.info("Migrating database: recreating last_read table with new schema")
+                # Save old data
+                cursor.execute("SELECT contact_or_channel, last_read_timestamp FROM last_read")
+                old_data = cursor.fetchall()
+                
+                # Drop and recreate
+                cursor.execute("DROP TABLE last_read")
+                cursor.execute("""
+                    CREATE TABLE last_read (
+                        identifier TEXT PRIMARY KEY,
+                        identifier_type TEXT NOT NULL,
+                        last_read_timestamp INTEGER NOT NULL
+                    )
+                """)
+                
+                # Migrate old data (assume all were channels/names, not contacts)
+                for row in old_data:
+                    cursor.execute("""
+                        INSERT INTO last_read (identifier, identifier_type, last_read_timestamp)
+                        VALUES (?, 'channel', ?)
+                    """, (row[0], row[1]))
+                
+                self.conn.commit()
+                self.logger.info("Migration complete: last_read table updated")
+                
+        except Exception as e:
+            self.logger.error(f"Migration failed: {e}")
+            # Don't raise - allow app to continue with what it has
     
     def store_message(self, msg_data: Dict[str, Any]) -> int:
         """Store a message in the database.
@@ -125,6 +195,7 @@ class MessageDatabase:
             msg_type = msg_data.get('type', 'contact')
             sender = msg_data.get('sender', 'Unknown')
             sender_pubkey = msg_data.get('sender_pubkey', '')
+            recipient_pubkey = msg_data.get('recipient_pubkey', '')
             actual_sender = msg_data.get('actual_sender')
             actual_sender_pubkey = msg_data.get('actual_sender_pubkey')
             text = msg_data.get('text', '')
@@ -141,12 +212,12 @@ class MessageDatabase:
             
             cursor.execute("""
                 INSERT INTO messages (
-                    type, sender, sender_pubkey, actual_sender, actual_sender_pubkey,
+                    type, sender, sender_pubkey, recipient_pubkey, actual_sender, actual_sender_pubkey,
                     text, timestamp, channel, snr, path_len, txt_type, signature,
                     raw_data, received_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                msg_type, sender, sender_pubkey, actual_sender, actual_sender_pubkey,
+                msg_type, sender, sender_pubkey, recipient_pubkey, actual_sender, actual_sender_pubkey,
                 text, timestamp, channel, snr, path_len, txt_type, signature,
                 raw_data, received_at
             ))
@@ -206,11 +277,11 @@ class MessageDatabase:
             self.logger.error(f"Failed to store contact: {e}")
             return False
     
-    def get_messages_for_contact(self, contact_name: str, limit: int = 1000) -> List[Dict[str, Any]]:
-        """Get messages for a specific contact or room.
+    def get_messages_for_contact(self, contact_name_or_pubkey: str, limit: int = 1000) -> List[Dict[str, Any]]:
+        """Get messages for a specific contact by pubkey or name.
         
         Args:
-            contact_name: Name of contact or room
+            contact_name_or_pubkey: Contact public key (preferred) or name (fallback)
             limit: Maximum number of messages to return
             
         Returns:
@@ -218,20 +289,101 @@ class MessageDatabase:
         """
         try:
             cursor = self.conn.cursor()
-            # Get both sent and received messages for this contact
-            cursor.execute("""
-                SELECT * FROM messages 
-                WHERE (sender = ? OR json_extract(raw_data, '$.recipient') = ?) 
-                  AND type IN ('contact', 'room')
-                ORDER BY timestamp ASC, received_at ASC
-                LIMIT ?
-            """, (contact_name, contact_name, limit))
+            
+            # Try to find contact by pubkey first (handles prefixes)
+            contact = self.get_contact_by_pubkey(contact_name_or_pubkey)
+            if not contact:
+                # Fallback: try by name
+                cursor.execute("SELECT * FROM contacts WHERE name = ? OR adv_name = ?", 
+                             (contact_name_or_pubkey, contact_name_or_pubkey))
+                row = cursor.fetchone()
+                contact = dict(row) if row else None
+            
+            if not contact:
+                self.logger.warning(f"Contact not found: {contact_name_or_pubkey}")
+                return []
+            
+            pubkey = contact['pubkey']
+            is_room = contact.get('type') == 3
+            
+            # Get "me" contact to identify our own messages
+            cursor.execute("SELECT pubkey FROM contacts WHERE is_me = 1")
+            me_row = cursor.fetchone()
+            my_pubkey = me_row[0] if me_row else None
+            
+            if is_room:
+                # For room servers: get messages TO the room, or FROM the room where WE are the sender
+                # Don't include messages from room where someone else is the sender
+                if my_pubkey:
+                    cursor.execute("""
+                        SELECT * FROM messages 
+                        WHERE (
+                            -- Messages TO the room (we sent)
+                            (recipient_pubkey = ? OR ? LIKE recipient_pubkey || '%')
+                            OR
+                            -- Messages FROM the room where WE are the actual sender
+                            ((sender_pubkey = ? OR ? LIKE sender_pubkey || '%')
+                             AND (actual_sender_pubkey = ? OR ? LIKE actual_sender_pubkey || '%'
+                                  OR signature = ? OR ? LIKE signature || '%'))
+                        )
+                        AND type IN ('contact', 'room')
+                        ORDER BY timestamp ASC, received_at ASC
+                        LIMIT ?
+                    """, (pubkey, pubkey, pubkey, pubkey, my_pubkey, my_pubkey, my_pubkey, my_pubkey, limit))
+                else:
+                    # No "me" contact - just show messages to/from room
+                    cursor.execute("""
+                        SELECT * FROM messages 
+                        WHERE (sender_pubkey = ? OR ? LIKE sender_pubkey || '%'
+                            OR recipient_pubkey = ? OR ? LIKE recipient_pubkey || '%')
+                        AND type IN ('contact', 'room')
+                        ORDER BY timestamp ASC, received_at ASC
+                        LIMIT ?
+                    """, (pubkey, pubkey, pubkey, pubkey, limit))
+            else:
+                # For regular contacts: get messages to/from this contact
+                # Note: Messages may have short pubkey prefixes, so we check both directions:
+                # - sender_pubkey matches full pubkey OR
+                # - full pubkey starts with sender_pubkey (prefix match)
+                cursor.execute("""
+                    SELECT * FROM messages 
+                    WHERE (sender_pubkey = ? 
+                        OR ? LIKE sender_pubkey || '%'
+                        OR recipient_pubkey = ?
+                        OR ? LIKE recipient_pubkey || '%'
+                        OR actual_sender_pubkey = ?
+                        OR ? LIKE actual_sender_pubkey || '%'
+                        OR signature = ?
+                        OR ? LIKE signature || '%'
+                        OR json_extract(raw_data, '$.recipient') = ?
+                        OR json_extract(raw_data, '$.recipient_pubkey') = ?
+                        OR ? LIKE json_extract(raw_data, '$.recipient_pubkey') || '%')
+                      AND type = 'contact'
+                    ORDER BY timestamp ASC, received_at ASC
+                    LIMIT ?
+                """, (pubkey, pubkey, pubkey, pubkey, pubkey, pubkey, 
+                      pubkey, pubkey, pubkey, pubkey, pubkey, limit))
             
             return [dict(row) for row in cursor.fetchall()]
             
         except Exception as e:
             self.logger.error(f"Failed to get messages for contact: {e}")
             return []
+    
+    def get_contact_by_me(self) -> Optional[Dict[str, Any]]:
+        """Get the contact marked as 'me' (is_me = 1).
+        
+        Returns:
+            Contact dictionary for current user, or None if not found
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT * FROM contacts WHERE is_me = 1 LIMIT 1")
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        except Exception as e:
+            self.logger.error(f"Failed to get 'me' contact: {e}")
+            return None
     
     def get_messages_for_channel(self, channel: int, limit: int = 1000) -> List[Dict[str, Any]]:
         """Get messages for a specific channel.
@@ -368,36 +520,53 @@ class MessageDatabase:
             self.logger.error(f"Failed to get recent conversations: {e}")
             return []
     
-    def mark_as_read(self, contact_or_channel: str, timestamp: Optional[int] = None):
+    def mark_as_read(self, contact_name_or_pubkey: str, timestamp: Optional[int] = None):
         """Mark messages as read up to a timestamp.
         
         Args:
-            contact_or_channel: Name of contact, room, or channel
+            contact_name_or_pubkey: Contact pubkey (preferred), name, or channel name
             timestamp: Unix timestamp to mark as read up to (default: now)
         """
         try:
             if timestamp is None:
                 timestamp = int(datetime.now().timestamp())
             
+            # Determine identifier and type
+            identifier_type = 'channel'  # Default for Public, etc.
+            identifier = contact_name_or_pubkey
+            
+            # Try to find contact by pubkey or name
+            contact = self.get_contact_by_pubkey(contact_name_or_pubkey)
+            if not contact:
+                cursor = self.conn.cursor()
+                cursor.execute("SELECT * FROM contacts WHERE name = ? OR adv_name = ?", 
+                             (contact_name_or_pubkey, contact_name_or_pubkey))
+                row = cursor.fetchone()
+                contact = dict(row) if row else None
+            
+            if contact:
+                identifier = contact['pubkey']
+                identifier_type = 'contact'
+            
             cursor = self.conn.cursor()
             cursor.execute("""
-                INSERT INTO last_read (contact_or_channel, last_read_timestamp)
-                VALUES (?, ?)
-                ON CONFLICT(contact_or_channel) DO UPDATE SET
+                INSERT INTO last_read (identifier, identifier_type, last_read_timestamp)
+                VALUES (?, ?, ?)
+                ON CONFLICT(identifier) DO UPDATE SET
                     last_read_timestamp = excluded.last_read_timestamp
-            """, (contact_or_channel, timestamp))
+            """, (identifier, identifier_type, timestamp))
             
             self.conn.commit()
-            self.logger.debug(f"Marked {contact_or_channel} as read up to {timestamp}")
+            self.logger.debug(f"Marked {identifier} ({identifier_type}) as read up to {timestamp}")
             
         except Exception as e:
             self.logger.error(f"Failed to mark as read: {e}")
     
-    def get_unread_count(self, contact_or_channel: str) -> int:
+    def get_unread_count(self, contact_name_or_pubkey: str) -> int:
         """Get count of unread messages for a contact/channel.
         
         Args:
-            contact_or_channel: Name of contact, room, or channel
+            contact_name_or_pubkey: Contact pubkey (preferred), name, or channel name
             
         Returns:
             Number of unread messages
@@ -405,24 +574,53 @@ class MessageDatabase:
         try:
             cursor = self.conn.cursor()
             
+            # Determine identifier
+            identifier = contact_name_or_pubkey
+            pubkey = None
+            contact = self.get_contact_by_pubkey(contact_name_or_pubkey)
+            if not contact:
+                cursor.execute("SELECT * FROM contacts WHERE name = ? OR adv_name = ?", 
+                             (contact_name_or_pubkey, contact_name_or_pubkey))
+                row = cursor.fetchone()
+                contact = dict(row) if row else None
+            
+            if contact:
+                identifier = contact['pubkey']
+                pubkey = identifier
+            
             # Get last read timestamp
             cursor.execute("""
                 SELECT last_read_timestamp FROM last_read
-                WHERE contact_or_channel = ?
-            """, (contact_or_channel,))
+                WHERE identifier = ?
+            """, (identifier,))
             
             row = cursor.fetchone()
             last_read = row[0] if row else 0
             
             # Count messages after last read (exclude sent messages)
-            cursor.execute("""
-                SELECT COUNT(*) FROM messages
-                WHERE (sender = ? OR json_extract(raw_data, '$.recipient') = ?)
-                  AND received_at > ?
-                  AND sender != 'Me'
-            """, (contact_or_channel, contact_or_channel, last_read))
+            if contact:
+                # For contacts, use pubkey-based lookup
+                self.logger.debug(f"🔍 Unread query: pubkey={pubkey}, last_read={last_read}")
+                cursor.execute("""
+                    SELECT COUNT(*) FROM messages
+                    WHERE (sender_pubkey = ? OR sender_pubkey LIKE ?
+                        OR actual_sender_pubkey = ? OR actual_sender_pubkey LIKE ?
+                        OR signature = ? OR signature LIKE ?)
+                      AND received_at > ?
+                      AND sender != 'Me'
+                """, (pubkey, f"{pubkey}%", pubkey, f"{pubkey}%", pubkey, f"{pubkey}%", last_read))
+            else:
+                # For channels, use name-based lookup (channels don't have pubkeys)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM messages
+                    WHERE type = 'channel'
+                      AND sender = ?
+                      AND received_at > ?
+                      AND sender != 'Me'
+                """, (identifier, last_read))
             
             count = cursor.fetchone()[0]
+            self.logger.debug(f"🔍 Unread count for {contact_name_or_pubkey}: {count}")
             return count
             
         except Exception as e:

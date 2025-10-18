@@ -198,22 +198,34 @@ RichLog {
     margin: 1 1 1 0;
 }
 
+#node-cmd-target-input {
+    width: 30%;
+    height: 3;
+    margin: 1 0 1 1;
+}
+
 #node-command-input {
+    width: 50%;
+    height: 3;
+    margin: 1 0 1 0;
+}
+
+#node-send-cmd-btn {
+    width: 20%;
+    height: 3;
+    margin: 1 1 1 0;
+}
+
+#node-status-target-input {
     width: 70%;
     height: 3;
     margin: 1 0 1 1;
 }
 
-#node-send-cmd-btn {
-    width: 25%;
+#node-status-btn {
+    width: 30%;
     height: 3;
     margin: 1 1 1 0;
-}
-
-#node-status-btn {
-    width: 20;
-    height: 3;
-    margin: 1 1 1 1;
 }
 
 #node-status-area {

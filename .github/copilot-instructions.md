@@ -241,6 +241,24 @@ if self.connection.rooms.is_logged_in(room_name):
 - Implement message filtering and display by type
 - Handle message timestamps properly
 
+**CRITICAL: Always use Public Keys for Lookups**
+- **NEVER** compare or lookup contacts by display names
+- **ALWAYS** use public keys (pubkeys) for identity verification and comparison
+- Messages may contain short pubkey prefixes - handle both full keys and prefixes
+- Example comparison:
+  ```python
+  # GOOD: Pubkey comparison
+  if sender_pubkey == my_pubkey or my_pubkey.startswith(sender_pubkey):
+      is_from_me = True
+  
+  # BAD: Name comparison
+  if sender == "Me":  # Names can be spoofed!
+      is_from_me = True
+  ```
+- Use `ContactManager.get_by_key()` for contact lookups
+- Store and compare `sender_pubkey`, `recipient_pubkey`, `actual_sender_pubkey`, and `signature` fields
+- Names are for display only, pubkeys are for identity
+
 ### Node Type Detection
 
 MeshCore contacts have a `type` field:

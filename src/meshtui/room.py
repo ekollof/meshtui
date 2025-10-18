@@ -21,10 +21,40 @@ class RoomManager:
         """
         self.meshcore = meshcore
         self.message_store = message_store
-        self.logged_in_rooms: Dict[str, bool] = {}
+        self.logged_in_rooms: Dict[str, bool] = {}  # room_name -> logged_in status
+        self.room_admin_status: Dict[str, bool] = {}  # room_name -> is_admin status
         self.room_pubkeys: Dict[str, str] = {}  # Map room_name -> pubkey
         self.pubkey_to_room: Dict[str, str] = {}  # Map pubkey -> room_name
         self.logger = logging.getLogger("meshtui.room")
+        
+        # Subscribe to login events to capture admin status
+        self.meshcore.subscribe(EventType.LOGIN_SUCCESS, self._handle_login_success)
+        self.meshcore.subscribe(EventType.LOGIN_FAILED, self._handle_login_failed)
+
+    async def _handle_login_success(self, event):
+        """Handle LOGIN_SUCCESS event to capture admin status."""
+        pubkey_prefix = event.payload.get('pubkey_prefix', '')
+        is_admin = event.payload.get('is_admin', False)
+        permissions = event.payload.get('permissions', 0)
+        
+        self.logger.info(f"Login success for {pubkey_prefix}: admin={is_admin}, permissions={permissions}")
+        
+        # Find which room this pubkey belongs to
+        room_name = self.get_room_by_pubkey(pubkey_prefix)
+        if room_name:
+            self.room_admin_status[room_name] = is_admin
+            self.logger.info(f"Room '{room_name}' admin status: {is_admin}")
+    
+    async def _handle_login_failed(self, event):
+        """Handle LOGIN_FAILED event."""
+        pubkey_prefix = event.payload.get('pubkey_prefix', '')
+        self.logger.warning(f"Login failed for {pubkey_prefix}")
+        
+        # Clear admin status for this room
+        room_name = self.get_room_by_pubkey(pubkey_prefix)
+        if room_name:
+            self.room_admin_status[room_name] = False
+            self.logged_in_rooms[room_name] = False
 
     def is_logged_in(self, room_name: str) -> bool:
         """Check if we're logged into a room server.
@@ -36,6 +66,17 @@ class RoomManager:
             True if logged in, False otherwise
         """
         return self.logged_in_rooms.get(room_name, False)
+    
+    def is_admin(self, room_name: str) -> bool:
+        """Check if we have admin privileges in a room server.
+        
+        Args:
+            room_name: Name of the room server
+            
+        Returns:
+            True if admin, False otherwise
+        """
+        return self.room_admin_status.get(room_name, False)
 
     def get_room_by_pubkey(self, pubkey: str) -> Optional[str]:
         """Get the room name associated with a pubkey.
