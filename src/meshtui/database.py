@@ -534,19 +534,23 @@ class MessageDatabase:
             # Determine identifier and type
             identifier_type = 'channel'  # Default for Public, etc.
             identifier = contact_name_or_pubkey
-            
+
             # Try to find contact by pubkey or name
             contact = self.get_contact_by_pubkey(contact_name_or_pubkey)
             if not contact:
                 cursor = self.conn.cursor()
-                cursor.execute("SELECT * FROM contacts WHERE name = ? OR adv_name = ?", 
+                cursor.execute("SELECT * FROM contacts WHERE name = ? OR adv_name = ?",
                              (contact_name_or_pubkey, contact_name_or_pubkey))
                 row = cursor.fetchone()
                 contact = dict(row) if row else None
-            
+
             if contact:
                 identifier = contact['pubkey']
                 identifier_type = 'contact'
+            else:
+                # For channels, keep the name as-is (e.g., "Public", "Channel 1")
+                # The identifier stays as the channel name
+                identifier_type = 'channel'
             
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -599,7 +603,7 @@ class MessageDatabase:
             
             # Count messages after last read (exclude sent messages)
             if contact:
-                # For contacts, use pubkey-based lookup
+                # For contacts/rooms, use pubkey-based lookup
                 self.logger.debug(f"🔍 Unread query: pubkey={pubkey}, last_read={last_read}")
                 cursor.execute("""
                     SELECT COUNT(*) FROM messages
@@ -610,14 +614,25 @@ class MessageDatabase:
                       AND sender != 'Me'
                 """, (pubkey, f"{pubkey}%", pubkey, f"{pubkey}%", pubkey, f"{pubkey}%", last_read))
             else:
-                # For channels, use name-based lookup (channels don't have pubkeys)
+                # For channels, extract channel index from name and use channel field
+                # Names are like "Public" (channel 0) or "Channel 1" (channel 1)
+                channel_idx = 0
+                if identifier == "Public":
+                    channel_idx = 0
+                elif identifier.startswith("Channel "):
+                    try:
+                        channel_idx = int(identifier.split(" ")[1])
+                    except (IndexError, ValueError):
+                        channel_idx = 0
+
+                self.logger.debug(f"🔍 Unread query: channel={identifier} (idx={channel_idx}), last_read={last_read}")
                 cursor.execute("""
                     SELECT COUNT(*) FROM messages
                     WHERE type = 'channel'
-                      AND sender = ?
+                      AND channel = ?
                       AND received_at > ?
                       AND sender != 'Me'
-                """, (identifier, last_read))
+                """, (channel_idx, last_read))
             
             count = cursor.fetchone()[0]
             self.logger.debug(f"🔍 Unread count for {contact_name_or_pubkey}: {count}")

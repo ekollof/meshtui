@@ -41,6 +41,15 @@ Thumbs.db
 *.log
 .config/
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+
 # uv
 uv.lock
 .python-version

@@ -339,6 +339,11 @@ class MeshTUI(App):
             self.logger.debug(f"New message in current view from {sender}")
             self.connection.mark_as_read(sender)
             asyncio.create_task(self.refresh_messages())
+            # Update the display to clear the unread count
+            if msg_type in ('contact', 'room'):
+                self._update_single_contact_display(sender)
+            elif msg_type == 'channel' and channel_name:
+                self._update_single_channel_display(channel_name)
         else:
             # Message is from another contact/channel - show notification and update that contact's unread indicator
             source = channel_name if msg_type == 'channel' else sender
@@ -393,6 +398,33 @@ class MeshTUI(App):
             self.logger.debug(f"Updated contact display for {contact_name}: unread={unread}")
         except Exception as e:
             self.logger.debug(f"Could not update contact display for {contact_name}: {e}")
+
+    def _update_single_channel_display(self, channel_name: str) -> None:
+        """Update the display of a single channel in the list to reflect new unread count.
+
+        Args:
+            channel_name: Name of the channel to update (e.g., "Public", "Channel 1")
+        """
+        try:
+            # Find the channel's ListItem widget
+            channel_id = f"channel-{sanitize_id(channel_name)}"
+            list_item = self.query_one(f"#{channel_id}", ListItem)
+
+            # Get unread count
+            unread = self.connection.get_unread_count(channel_name)
+
+            # Format display
+            if unread > 0:
+                display_text = f"{channel_name} ({unread})"
+            else:
+                display_text = channel_name
+
+            # Update the Static widget inside the ListItem
+            static = list_item.query_one(Static)
+            static.update(display_text)
+            self.logger.debug(f"Updated channel display for {channel_name}: unread={unread}")
+        except Exception as e:
+            self.logger.debug(f"Could not update channel display for {channel_name}: {e}")
 
     async def auto_connect(self) -> None:
         """Attempt to auto-connect to a meshcore device."""
@@ -676,9 +708,10 @@ class MeshTUI(App):
             self.current_contact = contact_name
             self.current_channel = None  # Clear channel selection
             
-            # Mark messages as read
+            # Mark messages as read and update display
             self.connection.mark_as_read(contact_name)
-            
+            self._update_single_contact_display(contact_name)
+
             # Check if this is a room server (type 3) and prompt for password if needed
             contact = self.connection.get_contact_by_name(contact_name)
             if contact and contact.get('type') == 3:
@@ -738,9 +771,10 @@ class MeshTUI(App):
             self.current_contact = None  # Clear contact selection
             self.logger.info(f"Selected channel: {channel_name}")
             
-            # Mark channel messages as read
+            # Mark channel messages as read and update display
             self.connection.mark_as_read(channel_name)
-            
+            self._update_single_channel_display(channel_name)
+
             # Update chat area header
             self.chat_area.clear()
             
