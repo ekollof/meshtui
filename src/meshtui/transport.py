@@ -28,41 +28,91 @@ class SerialTransport:
     def __init__(self):
         self.logger = logging.getLogger("meshtui.transport.serial")
     
-    async def identify_device(self, device_path: str, timeout: float = 2.0) -> bool:
+    async def identify_device(self, device_path: str, timeout: float = 5.0, retries: int = 2) -> bool:
         """Identify if a serial device is a MeshCore device.
-        
+
         Args:
             device_path: Path to the serial device
-            timeout: Timeout for identification attempt
-            
+            timeout: Timeout for identification attempt (default: 5.0s)
+            retries: Number of retry attempts (default: 2)
+
         Returns:
             True if device is MeshCore, False otherwise
         """
-        try:
-            self.logger.debug(f"Testing if {device_path} is a MeshCore device...")
-            # Create a temporary connection to test
-            temp_mc = await MeshCore.create_serial(
-                port=device_path, baudrate=115200, debug=False, only_error=True
-            )
+        for attempt in range(retries):
+            temp_mc = None
+            try:
+                if attempt > 0:
+                    self.logger.debug(f"Retry {attempt} for {device_path}...")
+                    # Wait a bit between retries to let serial port settle
+                    await asyncio.sleep(0.5)
 
-            # Query device info with timeout
-            result = await asyncio.wait_for(
-                temp_mc.commands.send_device_query(), timeout=timeout
-            )
+                self.logger.debug(f"Testing if {device_path} is a MeshCore device (attempt {attempt + 1}/{retries})...")
 
-            # Clean up
-            await temp_mc.disconnect()
+                # Create a temporary connection to test
+                temp_mc = await MeshCore.create_serial(
+                    port=device_path, baudrate=115200, debug=False, only_error=True
+                )
 
-            if result.type == EventType.ERROR:
-                self.logger.debug(f"{device_path} is not a MeshCore device")
-                return False
+                # Give the device a moment to initialize
+                await asyncio.sleep(0.2)
 
-            self.logger.debug(f"{device_path} is a MeshCore device")
-            return True
+                # Query device info with timeout
+                result = await asyncio.wait_for(
+                    temp_mc.commands.send_device_query(), timeout=timeout
+                )
 
-        except (asyncio.TimeoutError, Exception) as e:
-            self.logger.debug(f"Failed to identify {device_path}: {e}")
-            return False
+                # Check if we got valid device info
+                if result.type == EventType.ERROR:
+                    self.logger.debug(f"{device_path} returned error on query (attempt {attempt + 1}/{retries})")
+                    await temp_mc.disconnect()
+                    # Give asyncio time to clean up tasks
+                    await asyncio.sleep(0.1)
+                    temp_mc = None
+                    continue  # Try again
+
+                # Check for valid MeshCore response
+                device_info = result.payload
+                if device_info and "model" in device_info:
+                    self.logger.info(
+                        f"✓ Found MeshCore device at {device_path}: {device_info.get('model')} v{device_info.get('ver', 'unknown')}"
+                    )
+                    await temp_mc.disconnect()
+                    # Give asyncio time to clean up tasks
+                    await asyncio.sleep(0.1)
+                    return True
+                else:
+                    self.logger.debug(f"{device_path} responded but lacks MeshCore identification")
+                    await temp_mc.disconnect()
+                    # Give asyncio time to clean up tasks
+                    await asyncio.sleep(0.1)
+                    temp_mc = None
+                    continue  # Try again
+
+            except asyncio.TimeoutError:
+                self.logger.debug(f"Timeout identifying {device_path} (attempt {attempt + 1}/{retries})")
+                if temp_mc:
+                    try:
+                        await temp_mc.disconnect()
+                        # Give asyncio time to clean up tasks
+                        await asyncio.sleep(0.1)
+                    except Exception:
+                        pass
+                continue  # Try again
+            except Exception as e:
+                self.logger.debug(f"Failed to identify {device_path} (attempt {attempt + 1}/{retries}): {e}")
+                if temp_mc:
+                    try:
+                        await temp_mc.disconnect()
+                        # Give asyncio time to clean up tasks
+                        await asyncio.sleep(0.1)
+                    except Exception:
+                        pass
+                continue  # Try again
+
+        # All retries failed
+        self.logger.debug(f"✗ {device_path} is not a MeshCore device after {retries} attempts")
+        return False
 
     async def list_ports(self) -> List[Dict[str, str]]:
         """List all available serial ports.

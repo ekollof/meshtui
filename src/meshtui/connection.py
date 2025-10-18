@@ -85,37 +85,13 @@ class MeshConnection:
         self.tcp_transport = TCPTransport()
 
     async def identify_meshcore_device(
-        self, device_path: str, timeout: float = 2.0
+        self, device_path: str, timeout: float = 5.0
     ) -> bool:
-        """Identify if a serial device is a MeshCore device by attempting to connect and query."""
-        try:
-            self.logger.debug(f"Testing if {device_path} is a MeshCore device...")
-            # Create a temporary connection to test
-            temp_mc = await MeshCore.create_serial(
-                port=device_path, baudrate=115200, debug=False, only_error=True
-            )
+        """Identify if a serial device is a MeshCore device by attempting to connect and query.
 
-            # Try to query device info
-            result = await temp_mc.commands.send_device_query()
-            if result.type == EventType.ERROR:
-                self.logger.debug(f"Device at {device_path} is not a MeshCore device")
-                return False
-
-            device_info = result.payload
-            if device_info and "model" in device_info:
-                self.logger.info(
-                    f"Found MeshCore device at {device_path}: {device_info.get('model')} v{device_info.get('ver', 'unknown')}"
-                )
-                return True
-            else:
-                self.logger.debug(
-                    f"Device at {device_path} responded but lacks MeshCore identification"
-                )
-                return False
-
-        except Exception as e:
-            self.logger.debug(f"Failed to identify device at {device_path}: {e}")
-            return False
+        Delegates to SerialTransport for improved reliability with retries.
+        """
+        return await self.serial_transport.identify_device(device_path, timeout=timeout)
 
     async def scan_ble_devices(self, timeout: float = 2.0) -> List[Dict[str, Any]]:
         """Scan for available BLE MeshCore devices."""
@@ -142,14 +118,52 @@ class MeshConnection:
             self.logger.error(f"BLE scan failed: {e}")
             return []
 
-    async def scan_serial_devices(self) -> List[Dict[str, Any]]:
-        """Scan for available serial devices and identify MeshCore devices."""
+    async def scan_serial_devices(self, quick_scan: bool = False) -> List[Dict[str, Any]]:
+        """Scan for available serial devices and identify MeshCore devices.
+
+        Args:
+            quick_scan: If True, only scan likely candidates (USB/ACM) for faster detection
+
+        Returns:
+            List of device info dictionaries with is_meshcore flag
+        """
         self.logger.info("Scanning for serial devices...")
         try:
             ports = serial.tools.list_ports.comports()
             serial_devices = []
 
+            # Prioritize likely MeshCore devices first
+            priority_ports = []
+            other_ports = []
+
             for port in ports:
+                device_path = port.device.lower()
+                # USB serial devices are most likely to be MeshCore
+                if 'usb' in device_path or 'acm' in device_path or 'tty.usb' in device_path:
+                    priority_ports.append(port)
+                else:
+                    other_ports.append(port)
+
+            # Sort priority ports - prefer ttyUSB0, then ttyUSB*, then ttyACM*
+            def sort_key(port):
+                device = port.device.lower()
+                if 'ttyusb0' in device:
+                    return 0
+                elif 'ttyusb' in device:
+                    return 1
+                elif 'ttyacm' in device:
+                    return 2
+                else:
+                    return 3
+
+            priority_ports.sort(key=sort_key)
+
+            # In quick scan mode, only check priority ports
+            ports_to_check = priority_ports if quick_scan else priority_ports + other_ports
+
+            self.logger.info(f"Found {len(ports)} serial ports, checking {len(ports_to_check)} ports...")
+
+            for port in ports_to_check:
                 device_info = {
                     "device": port.device,
                     "name": port.name or "Unknown",
@@ -162,16 +176,21 @@ class MeshConnection:
                 if await self.identify_meshcore_device(port.device):
                     device_info["is_meshcore"] = True
                     self.logger.info(f"✓ MeshCore device found at {port.device}")
+                    # Found one! Add it and we can stop if we want
+                    serial_devices.append(device_info)
+                    if quick_scan:
+                        # In quick scan, return as soon as we find one
+                        self.logger.info("Quick scan found MeshCore device, stopping search")
+                        break
                 else:
                     device_info["is_meshcore"] = False
-
-                serial_devices.append(device_info)
+                    serial_devices.append(device_info)
 
             meshcore_count = sum(
                 1 for d in serial_devices if d.get("is_meshcore", False)
             )
             self.logger.info(
-                f"Found {len(serial_devices)} serial devices, {meshcore_count} are MeshCore devices"
+                f"Scanned {len(serial_devices)} devices, {meshcore_count} are MeshCore devices"
             )
             return serial_devices
 
@@ -262,19 +281,43 @@ class MeshConnection:
             self.logger.error(f"TCP connection failed: {e}")
             return False
 
-    async def connect_serial(self, port: str, baudrate: int = 115200) -> bool:
-        """Connect to a MeshCore device via serial."""
+    async def connect_serial(self, port: str, baudrate: int = 115200, verify_meshcore: bool = True) -> bool:
+        """Connect to a MeshCore device via serial.
+
+        Args:
+            port: Serial port path (e.g., '/dev/ttyUSB0')
+            baudrate: Connection baudrate (default: 115200)
+            verify_meshcore: If True, verify device is MeshCore before connecting (default: True)
+
+        Returns:
+            True if connection successful, False otherwise
+        """
         try:
+            # Optional: Verify this is a MeshCore device first
+            if verify_meshcore:
+                self.logger.info(f"Verifying {port} is a MeshCore device...")
+                is_meshcore = await self.identify_meshcore_device(port)
+                if not is_meshcore:
+                    self.logger.error(f"{port} is not a MeshCore device")
+                    return False
+
             self.logger.info(f"Connecting to serial device: {port}@{baudrate}")
             self.meshcore = await MeshCore.create_serial(
                 port=port, baudrate=baudrate, debug=False, only_error=False
             )
 
+            # Give device time to initialize
+            await asyncio.sleep(0.2)
+
             # Test connection
             self.logger.debug("Sending device query to test connection...")
-            result = await self.meshcore.commands.send_device_query()
+            result = await asyncio.wait_for(
+                self.meshcore.commands.send_device_query(), timeout=5.0
+            )
             if result.type == EventType.ERROR:
                 self.logger.error(f"Device query failed: {result}")
+                await self.meshcore.disconnect()
+                self.meshcore = None
                 return False
 
             self.connected = True
@@ -287,7 +330,7 @@ class MeshConnection:
             # Setup event handlers
             await self._setup_event_handlers()
             self.logger.debug("Event handlers set up")
-            
+
             # Initialize managers
             self._initialize_managers()
 
@@ -301,8 +344,25 @@ class MeshConnection:
             )
             return True
 
+        except asyncio.TimeoutError:
+            self.logger.error(f"Timeout connecting to serial device {port}")
+            if self.meshcore:
+                try:
+                    await self.meshcore.disconnect()
+                except Exception:
+                    pass
+                self.meshcore = None
+            return False
         except Exception as e:
             self.logger.error(f"Serial connection failed: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
+            if self.meshcore:
+                try:
+                    await self.meshcore.disconnect()
+                except Exception:
+                    pass
+                self.meshcore = None
             return False
 
     def _initialize_managers(self):

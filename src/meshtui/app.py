@@ -410,9 +410,9 @@ class MeshTUI(App):
                 try:
                     success = await asyncio.wait_for(
                         self.connection.connect_serial(
-                            port=self.args.serial, baudrate=self.args.baudrate
+                            port=self.args.serial, baudrate=self.args.baudrate, verify_meshcore=False
                         ),
-                        timeout=10.0,
+                        timeout=15.0,
                     )
                 except asyncio.TimeoutError:
                     self.logger.error("Timeout connecting to specified serial device")
@@ -489,23 +489,25 @@ class MeshTUI(App):
                 await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 return
 
-            # If BLE fails, try serial devices
+            # If BLE fails, try serial devices with quick scan (prioritizes USB devices)
             self.logger.info("BLE auto-connect failed, trying serial devices...")
             try:
                 serial_devices = await asyncio.wait_for(
-                    self.connection.scan_serial_devices(), timeout=5.0
+                    self.connection.scan_serial_devices(quick_scan=True), timeout=20.0
                 )
             except asyncio.TimeoutError:
                 self.logger.error("Timeout scanning serial devices")
                 serial_devices = []
             if serial_devices:
-                # Prioritize /dev/ttyUSB0 if available
-                usb_device = next(
-                    (d for d in serial_devices if d["device"] == "/dev/ttyUSB0"), None
+                # Find first MeshCore device (quick_scan already prioritized USB devices)
+                meshcore_device = next(
+                    (d for d in serial_devices if d.get("is_meshcore", False)), None
                 )
-                device_to_try = (
-                    usb_device["device"] if usb_device else serial_devices[0]["device"]
-                )
+                if not meshcore_device:
+                    # Fall back to first device if none identified as MeshCore
+                    meshcore_device = serial_devices[0]
+
+                device_to_try = meshcore_device["device"]
                 self.logger.info(f"Attempting to connect to: {device_to_try}")
 
                 try:
