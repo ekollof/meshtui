@@ -69,16 +69,15 @@ Header {
 }
 
 #main-content {
-    width: 50%;
+    width: 75%;
     height: 100%;
     layout: vertical;
 }
 
-#log-sidebar {
-    width: 25%;
+#logs-container {
     height: 100%;
-    background: $panel;
-    border-left: solid $primary;
+    width: 100%;
+    layout: vertical;
 }
 
 #logs-header {
@@ -88,13 +87,15 @@ Header {
     text-align: center;
     text-style: bold;
     border-bottom: solid $primary;
+    margin: 1 1 0 1;
 }
 
 #log-panel {
     height: 1fr;
-    background: $panel;
-    border: none;
+    background: $surface;
+    border: solid $primary;
     color: $text;
+    margin: 0 1 1 1;
 }
 
 #chat-container {
@@ -128,6 +129,12 @@ RichLog {
     width: 1fr;
     height: 3;
     margin: 1;
+}
+
+#ping-btn {
+    width: 10;
+    height: 3;
+    margin: 1 0 1 0;
 }
 
 #send-btn {
@@ -329,4 +336,23 @@ TextArea:focus {
 
 .pending {
     color: $warning;
+}
+
+/* Help text styling */
+.help-text {
+    color: $text-muted;
+    margin: 0 1 1 1;
+}
+
+.section-title {
+    margin: 1 1 0 1;
+}
+
+.section-label {
+    margin: 1 1 0 1;
+}
+
+.label {
+    width: 20%;
+    margin: 1 0 1 1;
 }

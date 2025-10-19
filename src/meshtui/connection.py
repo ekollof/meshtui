@@ -598,14 +598,17 @@ class MeshConnection:
         if self._message_callback:
             try:
                 msg_type = 'room' if is_room_message else 'contact'
+                self.logger.info(f"🔔 Triggering message callback: sender={sender_name}, msg_type={msg_type}, text={msg_data.get('text', '')[:50]}")
                 self._message_callback(
-                    sender=sender_name, 
-                    text=msg_data.get('text', ''), 
+                    sender=sender_name,
+                    text=msg_data.get('text', ''),
                     msg_type=msg_type,
                     txt_type=txt_type  # Pass txt_type so UI can route command responses
                 )
             except Exception as e:
                 self.logger.error(f"Error in message callback: {e}")
+                import traceback
+                self.logger.error(f"Callback traceback: {traceback.format_exc()}")
 
     async def _handle_channel_message(self, event):
         """Handle channel message received event."""
@@ -780,11 +783,15 @@ class MeshConnection:
             # Look up contact to get pubkey for storage
             contact = self.contacts.get_by_name(recipient_name)
             recipient_pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id") if contact else ""
-            
+
+            # Determine message type based on recipient type
+            is_room = contact and contact.get('type') == 3  # Type 3 = Room Server
+            msg_type = 'room' if is_room else 'contact'
+
             # Store sent message in database
             import time
             sent_msg = {
-                'type': 'contact',
+                'type': msg_type,
                 'sender': 'Me',
                 'sender_pubkey': '',
                 'recipient': recipient_name,
@@ -798,7 +805,7 @@ class MeshConnection:
             if self.db:
                 self.db.store_message(sent_msg)
 
-            self.logger.info(f"Sent and stored message to {recipient_name}")
+            self.logger.info(f"Sent and stored {msg_type} message to {recipient_name}")
             return status_info
             
         except Exception as e:
@@ -845,13 +852,42 @@ class MeshConnection:
             return self.rooms.is_logged_in(room_name)
         return False
 
+    async def _login_to_repeater(self, contact: dict, password: str) -> bool:
+        """Login to a repeater node (type 2).
+
+        This is a simple helper for repeater authentication. Unlike room servers,
+        repeaters don't require complex state management, so this logic stays in
+        the connection layer rather than having a dedicated RepeaterManager.
+
+        Args:
+            contact: Contact dictionary for the repeater
+            password: Password for authentication
+
+        Returns:
+            True if login successful, False otherwise
+        """
+        try:
+            node_name = contact.get('adv_name') or contact.get('name', 'Unknown')
+            result = await self.meshcore.commands.send_login(contact, password)
+
+            if result.type == EventType.ERROR:
+                self.logger.error(f"Failed to login to repeater '{node_name}': {result}")
+                return False
+
+            self.logger.info(f"Successfully logged into repeater '{node_name}'")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error logging into repeater: {e}")
+            return False
+
     async def login_to_room(self, room_name: str, password: str) -> bool:
-        """Login to a room server.
-        
+        """Login to a room server (type 3).
+
         Args:
             room_name: Name of the room server contact
             password: Password for the room
-            
+
         Returns:
             True if login successful, False otherwise
         """
@@ -864,23 +900,76 @@ class MeshConnection:
             if not contact:
                 self.logger.error(f"Room '{room_name}' not found")
                 return False
-            
+
+            self.logger.debug(f"🔍 Room contact dict keys: {contact.keys()}")
+            self.logger.debug(f"🔍 Room contact: {contact}")
+
             # Verify it's a room server (type 3)
             if not self.contacts.is_room_server(contact):
                 self.logger.error(f"Contact '{room_name}' is not a room server")
                 return False
-            
+
+            # Delegate to RoomManager (pass contact dict, not just key)
+            return await self.rooms.login(room_name, contact, password)
+
+        except Exception as e:
+            self.logger.error(f"Error logging into room: {e}")
+            return False
+
+    async def logout_from_room(self, room_name: str) -> bool:
+        """Logout from a room server (type 3).
+
+        Args:
+            room_name: Name of the room server contact
+
+        Returns:
+            True if logout successful, False otherwise
+        """
+        if not self.rooms or not self.contacts:
+            return False
+
+        try:
+            # Look up the room contact
+            contact = self.contacts.get_by_name(room_name)
+            if not contact:
+                self.logger.error(f"Room '{room_name}' not found")
+                return False
+
             # Get the room's public key
             room_key = contact.get("public_key") or contact.get("pubkey")
             if not room_key:
                 self.logger.error(f"Room '{room_name}' has no public_key")
                 return False
-            
-            # Delegate to RoomManager (pass contact dict, not just key)
-            return await self.rooms.login(room_name, contact, password)
-            
+
+            # Delegate to RoomManager
+            return await self.rooms.logout(room_name, room_key)
+
         except Exception as e:
-            self.logger.error(f"Error logging into room: {e}")
+            self.logger.error(f"Error logging out from room: {e}")
+            return False
+
+    async def _logout_from_repeater(self, contact: dict) -> bool:
+        """Logout from a repeater node (type 2).
+
+        Args:
+            contact: Contact dictionary for the repeater
+
+        Returns:
+            True if logout successful, False otherwise
+        """
+        try:
+            node_name = contact.get('adv_name') or contact.get('name', 'Unknown')
+            result = await self.meshcore.commands.send_logout(contact)
+
+            if result.type == EventType.ERROR:
+                self.logger.error(f"Failed to logout from repeater '{node_name}': {result}")
+                return False
+
+            self.logger.info(f"Successfully logged out from repeater '{node_name}'")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error logging out from repeater: {e}")
             return False
 
     async def _fetch_room_messages(self, room_key: str) -> None:
@@ -1179,75 +1268,89 @@ class MeshConnection:
 
     async def login_to_node(self, node_name: str, password: str) -> bool:
         """Log into a node (repeater or room server).
-        
-        Works for type 2 (repeater) and type 3 (room server) nodes.
+
+        This is a convenience method that routes to the appropriate handler
+        based on node type. It's a thin orchestration layer.
+
+        Args:
+            node_name: Name of the node (repeater or room server)
+            password: Authentication password
+
+        Returns:
+            True if login successful, False otherwise
+
+        Note:
+            - Type 3 (room server) -> delegates to login_to_room()
+            - Type 2 (repeater) -> delegates to _login_to_repeater()
         """
         if not self.meshcore or not self.contacts:
             return False
 
         try:
-            # Get contact to verify it's a repeater or room
+            # Look up the contact
             contact = self.contacts.get_by_name(node_name)
             if not contact:
                 self.logger.error(f"Node '{node_name}' not found")
                 return False
-            
+
             node_type = contact.get('type', 0)
-            if node_type not in [2, 3]:  # repeater or room
+
+            # Route to appropriate handler based on type
+            if node_type == 3:
+                # Room server - use dedicated method
+                return await self.login_to_room(node_name, password)
+            elif node_type == 2:
+                # Repeater - use helper method
+                return await self._login_to_repeater(contact, password)
+            else:
                 self.logger.error(f"Node '{node_name}' is not a repeater or room server (type={node_type})")
                 return False
-            
-            # Use room login for type 3, regular login for type 2
-            if node_type == 3 and self.rooms:
-                # Room server - use RoomManager
-                return await self.rooms.login(node_name, contact, password)
-            else:
-                # Repeater - use direct login command
-                result = await self.meshcore.commands.login(node_name, password)
-                if result.type == EventType.ERROR:
-                    self.logger.error(f"Failed to login to {node_name}: {result}")
-                    return False
-                self.logger.info(f"Successfully logged into {node_name}")
-                return True
-                
+
         except Exception as e:
-            self.logger.error(f"Error logging into {node_name}: {e}")
+            self.logger.error(f"Error logging into node '{node_name}': {e}")
             return False
 
     async def logout_from_node(self, node_name: str) -> bool:
-        """Log out from a node (repeater or room server)."""
+        """Log out from a node (repeater or room server).
+
+        This is a convenience method that routes to the appropriate handler
+        based on node type. It's a thin orchestration layer.
+
+        Args:
+            node_name: Name of the node (repeater or room server)
+
+        Returns:
+            True if logout successful, False otherwise
+
+        Note:
+            - Type 3 (room server) -> delegates to logout_from_room()
+            - Type 2 (repeater) -> delegates to _logout_from_repeater()
+        """
         if not self.meshcore or not self.contacts:
             return False
 
         try:
-            # Get contact to determine type
+            # Look up the contact
             contact = self.contacts.get_by_name(node_name)
             if not contact:
                 self.logger.error(f"Node '{node_name}' not found")
                 return False
-            
+
             node_type = contact.get('type', 0)
-            
-            # Use room logout for type 3, regular logout for type 2
-            if node_type == 3 and self.rooms:
-                # Room server - use RoomManager
-                room_key = contact.get('public_key') or contact.get('pubkey')
-                if room_key and room_key in self.rooms.logged_in_rooms:
-                    del self.rooms.logged_in_rooms[room_key]
-                    self.logger.info(f"Logged out from room {node_name}")
-                    return True
-                return False
+
+            # Route to appropriate handler based on type
+            if node_type == 3:
+                # Room server - use dedicated method
+                return await self.logout_from_room(node_name)
+            elif node_type == 2:
+                # Repeater - use helper method
+                return await self._logout_from_repeater(contact)
             else:
-                # Repeater
-                result = await self.meshcore.commands.logout(node_name)
-                if result.type == EventType.ERROR:
-                    self.logger.error(f"Failed to logout from {node_name}: {result}")
-                    return False
-                self.logger.info(f"Successfully logged out from {node_name}")
-                return True
-                
+                self.logger.error(f"Node '{node_name}' is not a repeater or room server (type={node_type})")
+                return False
+
         except Exception as e:
-            self.logger.error(f"Error logging out from {node_name}: {e}")
+            self.logger.error(f"Error logging out from node '{node_name}': {e}")
             return False
 
     async def send_command_to_node(self, node_name: str, command: str) -> bool:
@@ -1329,6 +1432,88 @@ class MeshConnection:
         except Exception as e:
             self.logger.error(f"Error requesting status from {node_name}: {e}")
             return None
+
+    async def ping_contact(self, contact_name: str) -> Dict[str, Any]:
+        """Ping a contact to test connectivity.
+
+        Sends a short message and waits for acknowledgment.
+        This is the most reliable way to test if a contact is reachable.
+
+        Args:
+            contact_name: Name of the contact to ping
+
+        Returns:
+            Dict with ping result:
+            - success: bool - whether contact responded with ACK
+            - latency: float - round trip time in seconds (if successful)
+            - error: str - error message (if failed)
+        """
+        import time
+
+        if not self.meshcore or not self.contacts:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            # Get contact
+            contact = self.contacts.get_by_name(contact_name)
+            if not contact:
+                return {"success": False, "error": f"Contact '{contact_name}' not found"}
+
+            pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+            if not pubkey:
+                return {"success": False, "error": "Contact has no public key"}
+
+            self.logger.info(f"Pinging {contact_name} ({pubkey[:16]}...)")
+
+            # Send a ping message and wait for ACK
+            start_time = time.time()
+
+            # Send the message - this returns MSG_SENT with expected_ack
+            result = await self.meshcore.commands.send_msg(pubkey, "ping")
+
+            if result.type == EventType.ERROR:
+                return {
+                    "success": False,
+                    "error": f"Failed to send ping: {result.payload if hasattr(result, 'payload') else 'unknown error'}"
+                }
+
+            # Get the expected ACK code
+            expected_ack = result.payload.get("expected_ack", b"").hex()
+            suggested_timeout = result.payload.get("suggested_timeout", 5000) / 1000.0
+
+            self.logger.debug(f"Waiting for ACK {expected_ack}, suggested timeout: {suggested_timeout}s")
+
+            # Wait for the ACK event
+            try:
+                ack_event = await asyncio.wait_for(
+                    self.meshcore.dispatcher.wait_for_event(
+                        EventType.ACK,
+                        attribute_filters={"code": expected_ack}
+                    ),
+                    timeout=min(suggested_timeout * 1.5, 15.0)  # Use suggested timeout with margin
+                )
+
+                latency = time.time() - start_time
+                self.logger.info(f"✓ Ping successful to {contact_name}: {latency*1000:.0f}ms")
+
+                return {
+                    "success": True,
+                    "latency": latency
+                }
+
+            except asyncio.TimeoutError:
+                latency = time.time() - start_time
+                self.logger.warning(f"✗ Ping timeout to {contact_name} after {latency:.1f}s (no ACK received)")
+                return {
+                    "success": False,
+                    "error": f"Timeout after {latency:.1f}s - no ACK received (contact may be out of range or offline)"
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error pinging {contact_name}: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
 
     # Deprecated methods - kept for backward compatibility
     async def login_to_repeater(self, repeater_name: str, password: str) -> bool:

@@ -14,7 +14,7 @@ class RoomManager:
 
     def __init__(self, meshcore, message_store: List[Dict[str, Any]]):
         """Initialize room manager.
-        
+
         Args:
             meshcore: MeshCore instance
             message_store: Shared message storage list
@@ -25,36 +25,50 @@ class RoomManager:
         self.room_admin_status: Dict[str, bool] = {}  # room_name -> is_admin status
         self.room_pubkeys: Dict[str, str] = {}  # Map room_name -> pubkey
         self.pubkey_to_room: Dict[str, str] = {}  # Map pubkey -> room_name
+        self.pending_login: Optional[asyncio.Future] = None  # Future for pending login
         self.logger = logging.getLogger("meshtui.room")
-        
+
         # Subscribe to login events to capture admin status
-        self.meshcore.subscribe(EventType.LOGIN_SUCCESS, self._handle_login_success)
-        self.meshcore.subscribe(EventType.LOGIN_FAILED, self._handle_login_failed)
+        sub1 = self.meshcore.subscribe(EventType.LOGIN_SUCCESS, self._handle_login_success)
+        sub2 = self.meshcore.subscribe(EventType.LOGIN_FAILED, self._handle_login_failed)
+        self.logger.info(f"✅ Subscribed to LOGIN events: sub1={sub1}, sub2={sub2}")
 
     async def _handle_login_success(self, event):
         """Handle LOGIN_SUCCESS event to capture admin status."""
+        print(f"🔔🔔🔔 LOGIN_SUCCESS EVENT RECEIVED! Event: {event}")  # BYPASS LOGGING
+        self.logger.debug(f"🔔 _handle_login_success called! Event: {event}")
         pubkey_prefix = event.payload.get('pubkey_prefix', '')
         is_admin = event.payload.get('is_admin', False)
         permissions = event.payload.get('permissions', 0)
-        
+
         self.logger.info(f"Login success for {pubkey_prefix}: admin={is_admin}, permissions={permissions}")
-        
+
         # Find which room this pubkey belongs to
         room_name = self.get_room_by_pubkey(pubkey_prefix)
         if room_name:
             self.room_admin_status[room_name] = is_admin
             self.logger.info(f"Room '{room_name}' admin status: {is_admin}")
-    
+
+        # If there's a pending login, resolve it with success
+        if self.pending_login and not self.pending_login.done():
+            self.pending_login.set_result("success")
+
     async def _handle_login_failed(self, event):
         """Handle LOGIN_FAILED event."""
+        print(f"❌❌❌ LOGIN_FAILED EVENT RECEIVED! Event: {event}")  # BYPASS LOGGING
+        self.logger.debug(f"🔔 _handle_login_failed called! Event: {event}")
         pubkey_prefix = event.payload.get('pubkey_prefix', '')
         self.logger.warning(f"Login failed for {pubkey_prefix}")
-        
+
         # Clear admin status for this room
         room_name = self.get_room_by_pubkey(pubkey_prefix)
         if room_name:
             self.room_admin_status[room_name] = False
             self.logged_in_rooms[room_name] = False
+
+        # If there's a pending login, resolve it with failure
+        if self.pending_login and not self.pending_login.done():
+            self.pending_login.set_result("failed")
 
     def is_logged_in(self, room_name: str) -> bool:
         """Check if we're logged into a room server.
@@ -110,21 +124,34 @@ class RoomManager:
             return False
 
         try:
-            self.logger.info(f"Attempting to login to room '{room_name}'")
-            
+            pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+
+            # If already logged in, logout first to avoid session conflicts
+            if self.is_logged_in(room_name):
+                self.logger.info(f"Already logged into '{room_name}', logging out first...")
+                await self.logout(room_name, contact)
+                # Give the room server a moment to process the logout
+                await asyncio.sleep(0.5)
+
+            self.logger.info(f"Attempting to login to room '{room_name}' (pubkey: {pubkey[:16]}...)")
+
             # Send login request with contact dict (not just key)
+            self.logger.debug(f"Calling send_login with contact type: {type(contact)}, password length: {len(password)}")
             result = await self.meshcore.commands.send_login(contact, password)
-            
+
+            self.logger.info(f"send_login result: type={result.type}, payload={result.payload if hasattr(result, 'payload') else 'N/A'}")
+
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to send login: {result}")
                 return False
-            
+
+            # Note: Room servers respond with LOGIN_SUCCESS/FAIL directly, they don't ACK login packets
+            self.logger.debug(f"Login packet sent, now waiting for LOGIN_SUCCESS or LOGIN_FAILED event")
+
             # Wait for LOGIN_SUCCESS or LOGIN_FAILED event
-            login_result = await asyncio.wait_for(
-                self._wait_for_login_event(),
-                timeout=5.0
-            )
-            
+            # (_wait_for_login_event has its own 10s timeout)
+            login_result = await self._wait_for_login_event()
+
             if login_result and login_result == "success":
                 self.logger.info(f"Successfully logged into room '{room_name}'")
                 self.logged_in_rooms[room_name] = True
@@ -157,35 +184,30 @@ class RoomManager:
 
     async def _wait_for_login_event(self) -> Optional[str]:
         """Wait for login success or failure event.
-        
+
+        Uses the global handlers (_handle_login_success/_handle_login_failed)
+        which will resolve self.pending_login.
+
         Returns:
             "success" if LOGIN_SUCCESS, "failed" if LOGIN_FAILED, None on error
         """
         try:
-            # Subscribe to login events temporarily
-            login_success = asyncio.Future()
-            
-            async def on_login_success(event):
-                if not login_success.done():
-                    login_success.set_result("success")
-            
-            async def on_login_failed(event):
-                if not login_success.done():
-                    login_success.set_result("failed")
-            
-            sub1 = self.meshcore.subscribe(EventType.LOGIN_SUCCESS, on_login_success)
-            sub2 = self.meshcore.subscribe(EventType.LOGIN_FAILED, on_login_failed)
-            
-            try:
-                result = await asyncio.wait_for(login_success, timeout=5.0)
-                return result
-            finally:
-                self.meshcore.unsubscribe(sub1)
-                self.meshcore.unsubscribe(sub2)
-                
+            # Create a new future for this login attempt
+            self.pending_login = asyncio.Future()
+
+            # Wait for the global handlers to resolve it
+            result = await asyncio.wait_for(self.pending_login, timeout=10.0)
+            return result
+
+        except asyncio.TimeoutError:
+            self.logger.error("Login event timed out")
+            return None
         except Exception as e:
             self.logger.error(f"Error waiting for login event: {e}")
             return None
+        finally:
+            # Clean up the future
+            self.pending_login = None
 
     async def fetch_messages(self, contact: dict) -> int:
         """Fetch queued messages from a room server after login.

@@ -158,11 +158,14 @@ class ContactManager:
 
     async def send_message(self, recipient_name: str, message: str) -> Optional[Dict[str, Any]]:
         """Send a message to a contact.
-        
+
+        For regular contacts (type 0, 1) uses send_msg().
+        For room servers/repeaters/sensors (type 2, 3, 4) uses send_cmd().
+
         Args:
             recipient_name: The display name of the contact
             message: The message text to send
-            
+
         Returns:
             Dict with status info if successful, None if failed
         """
@@ -175,28 +178,32 @@ class ContactManager:
             if not contact:
                 self.logger.error(f"Contact '{recipient_name}' not found")
                 return None
-            
+
             # Try to get the recipient identifier
             recipient = contact.get("public_key") or contact.get("pubkey") or contact.get("id")
             if not recipient:
                 self.logger.error(f"Contact '{recipient_name}' has no public_key/id field")
                 return None
-            
-            self.logger.info(f"Sending message to {recipient_name} (key: {recipient[:16]}...)")
+
+            # Send message using send_msg for all contact types
+            # Note: send_msg works for all types including rooms (type 3)
+            # send_cmd is only for administrative CLI commands, not chat messages
+            contact_type = contact.get('type', 1)
+            self.logger.info(f"Sending message to {recipient_name} (type {contact_type}, key: {recipient[:16]}...)")
             result = await self.meshcore.commands.send_msg(recipient, message)
-            
+
             if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to send message: {result}")
+                self.logger.error(f"Failed to send: {result}")
                 return None
-            
+
             # Return status information
             status_info = {
                 'status': 'sent',
                 'result': result.payload if hasattr(result, 'payload') else {},
             }
-            self.logger.info(f"Message sent successfully")
+            self.logger.info(f"Message/command sent successfully")
             return status_info
-            
+
         except Exception as e:
             self.logger.error(f"Error sending message: {e}")
             import traceback

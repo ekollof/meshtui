@@ -140,6 +140,7 @@ class MeshTUI(App):
                                     placeholder="Type message or command...",
                                     id="message-input",
                                 )
+                                yield Button("Ping", id="ping-btn", variant="default")
                                 yield Button("Send", id="send-btn", variant="primary")
 
                     with TabPane("Device Settings", id="settings-tab"):
@@ -255,10 +256,12 @@ class MeshTUI(App):
                                     id="node-status-area", auto_scroll=True, wrap=True
                                 )
 
-            # Right sidebar - Logs
-            with Vertical(id="log-sidebar"):
-                yield Static("Logs", id="logs-header")
-                yield Log(id="log-panel", auto_scroll=True)
+                    with TabPane("Logs", id="logs-tab"):
+                        # Application logs
+                        with Vertical(id="logs-container"):
+                            yield Static("Application Logs", id="logs-header")
+                            yield Static("Debug and status messages from MeshTUI", classes="help-text")
+                            yield Log(id="log-panel", auto_scroll=True)
 
         yield Footer()
 
@@ -396,10 +399,10 @@ class MeshTUI(App):
                              (channel_name == "Public" and self.current_channel == "Public"))
         
         self.logger.debug(f"🔍 is_current_view={is_current_view}")
-        
+
         if is_current_view:
             # Message is for current view - refresh immediately and mark as read
-            self.logger.debug(f"New message in current view from {sender}")
+            self.logger.info(f"✅ New message in current view from {sender}, refreshing display")
             self.connection.mark_as_read(sender)
             asyncio.create_task(self.refresh_messages())
             # Update the display to clear the unread count
@@ -413,10 +416,13 @@ class MeshTUI(App):
             preview = text[:50] + "..." if len(text) > 50 else text
             self.logger.info(f"💬 New message from {source}: {preview}")
             self.notify(f"New message from {source}", title="Message Received", severity="information")
-            # Update just this contact's display to show new unread count
+            # Update just this contact/channel's display to show new unread count
             if msg_type in ('contact', 'room'):
                 self.logger.debug(f"🔍 Calling _update_single_contact_display for {sender}")
                 self._update_single_contact_display(sender)
+            elif msg_type == 'channel' and channel_name:
+                self.logger.debug(f"🔍 Calling _update_single_channel_display for {channel_name}")
+                self._update_single_channel_display(channel_name)
     
     def _update_single_contact_display(self, contact_name: str) -> None:
         """Update the display of a single contact in the list to reflect new unread count.
@@ -760,6 +766,42 @@ class MeshTUI(App):
     async def on_message_submit(self) -> None:
         """Handle message input submission."""
         await self.send_message()
+
+    @on(Button.Pressed, "#ping-btn")
+    async def ping_contact(self) -> None:
+        """Ping the currently selected contact to test connectivity."""
+        if not self.current_contact:
+            self.chat_area.write("[yellow]No contact selected. Select a contact first.[/yellow]")
+            return
+
+        if not self.connection or not self.connection.is_connected:
+            self.chat_area.write("[red]Not connected to device[/red]")
+            return
+
+        self.chat_area.write(f"[dim]Pinging {self.current_contact}...[/dim]")
+
+        try:
+            result = await self.connection.ping_contact(self.current_contact)
+
+            if result["success"]:
+                latency_ms = result["latency"] * 1000
+                self.chat_area.write(f"[green]✓ {self.current_contact} is reachable! Latency: {latency_ms:.0f}ms[/green]")
+
+                # Show status info if available
+                if result.get("status"):
+                    status = result["status"]
+                    self.chat_area.write(f"[dim]Status: Battery {status.get('battery', 'N/A')}%, "
+                                       f"SNR {status.get('snr', 'N/A')} dB[/dim]")
+            else:
+                error = result.get("error", "Unknown error")
+                self.chat_area.write(f"[red]✗ Ping failed: {error}[/red]")
+                self.chat_area.write(f"[yellow]Contact may be out of range or offline[/yellow]")
+
+        except Exception as e:
+            self.chat_area.write(f"[red]Error pinging contact: {e}[/red]")
+            self.logger.error(f"Error in ping handler: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
 
     @on(ListView.Selected, "#contacts-list")
     async def on_contact_selected(self, event: ListView.Selected) -> None:
@@ -1629,6 +1671,13 @@ def main():
     )
     file_handler.setFormatter(file_formatter)
     root_logger.addHandler(file_handler)
+
+    # Enable meshcore debug logging - force propagate and add handler
+    meshcore_logger = logging.getLogger("meshcore")
+    meshcore_logger.setLevel(logging.DEBUG)
+    meshcore_logger.propagate = True
+    meshcore_logger.addHandler(file_handler)  # Add our file handler directly
+    meshcore_logger.info("Meshcore logging enabled at DEBUG level")
 
     # Log startup message to file
     startup_logger = logging.getLogger("meshtui.startup")
