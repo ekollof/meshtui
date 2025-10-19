@@ -141,6 +141,7 @@ class MeshTUI(App):
                                     id="message-input",
                                 )
                                 yield Button("Ping", id="ping-btn", variant="default")
+                                yield Button("Delete Contact", id="delete-contact-btn", variant="error")
                                 yield Button("Send", id="send-btn", variant="primary")
 
                     with TabPane("Device Settings", id="settings-tab"):
@@ -312,6 +313,9 @@ class MeshTUI(App):
         
         # Register message callback for notifications
         self.connection.set_message_callback(self._on_new_message)
+        
+        # Register contacts callback for UI updates
+        self.connection.set_contacts_callback(self._on_contacts_updated)
 
         # Try to auto-connect if possible (schedule after mount)
         self.call_later(lambda: asyncio.create_task(self.auto_connect()))
@@ -359,6 +363,12 @@ class MeshTUI(App):
         self.command_reference.write("  set lora_bw <khz> - Bandwidth")
         self.command_reference.write("  set tx_power <n>  - TX power")
         self.command_reference.write("  reboot            - Reboot node")
+
+    def _on_contacts_updated(self):
+        """Callback when contacts list is updated."""
+        self.logger.debug("📋 Contacts list updated, refreshing UI")
+        # Schedule UI update
+        self.call_later(lambda: asyncio.create_task(self.update_contacts()))
 
     def _on_new_message(self, sender: str, text: str, msg_type: str, channel_name: Optional[str] = None, txt_type: int = 0):
         """Callback when a new message arrives.
@@ -803,6 +813,45 @@ class MeshTUI(App):
             import traceback
             self.logger.debug(traceback.format_exc())
 
+    @on(Button.Pressed, "#delete-contact-btn")
+    async def delete_contact(self) -> None:
+        """Delete the currently selected contact from the device."""
+        if not self.current_contact:
+            self.chat_area.write("[yellow]No contact selected. Select a contact first.[/yellow]")
+            return
+
+        if not self.connection or not self.connection.is_connected:
+            self.chat_area.write("[red]Not connected to device[/red]")
+            return
+
+        # Store contact name before deletion
+        contact_name = self.current_contact
+
+        # Confirm deletion
+        self.chat_area.write(f"[yellow]⚠ Deleting contact '{contact_name}' from device...[/yellow]")
+
+        try:
+            success = await self.connection.remove_contact(contact_name)
+
+            if success:
+                self.chat_area.write(f"[green]✓ Contact '{contact_name}' removed successfully[/green]")
+                self.chat_area.write(f"[dim]The contact list has been refreshed.[/dim]")
+                
+                # Clear selection and chat area
+                self.current_contact = None
+                self.chat_area.clear()
+                
+                # Update the UI to reflect the deleted contact
+                await self.update_contacts()
+            else:
+                self.chat_area.write(f"[red]✗ Failed to remove contact '{contact_name}'[/red]")
+
+        except Exception as e:
+            self.chat_area.write(f"[red]Error deleting contact: {e}[/red]")
+            self.logger.error(f"Error in delete contact handler: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+
     @on(ListView.Selected, "#contacts-list")
     async def on_contact_selected(self, event: ListView.Selected) -> None:
         """Handle contact selection."""
@@ -991,16 +1040,16 @@ class MeshTUI(App):
                             actual_sender = signature[:8]  # Show short key if unknown
                     
                     # Format sender display (same as refresh_messages)
-                    if (msg_type == "room" or is_room_server) and actual_sender:
+                    if is_from_me:
+                        # Message sent by me (based on pubkey) - always show as "You"
+                        self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n")
+                    elif (msg_type == "room" or is_room_server) and actual_sender:
                         # Room message - show "Room / Sender: message"
                         display_sender = f"{sender} / {actual_sender}"
                         self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {text}\n")
                     elif msg_type == "room" or is_room_server:
                         # Room message without sender info - show as anonymous
                         self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/cyan] {text}\n")
-                    elif is_from_me:
-                        # Message sent by me (based on pubkey)
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n")
                     elif sender == contact_name:
                         self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {text}\n")
                     else:
@@ -1058,24 +1107,24 @@ class MeshTUI(App):
         self._updating_contacts = True
         try:
             self.logger.debug("Starting contact update process...")
-            await asyncio.wait_for(self.connection.refresh_contacts(), timeout=5.0)
+            
+            # Just get the contacts that were already refreshed by the connection
+            # Don't call refresh_contacts() again as it may have just been called
             contacts = self.connection.get_contacts()
             self.logger.debug(f"Retrieved {len(contacts)} contacts from connection")
 
-            # Clear and repopulate contacts list
-            self.contacts_list.clear()
-            self._contact_id_map.clear()  # Clear the mapping
+            # First, remove all existing ListItem widgets from the contacts_list
+            # This is necessary because clear() doesn't actually remove widgets from DOM
+            try:
+                for item in list(self.contacts_list.children):
+                    if isinstance(item, ListItem):
+                        await item.remove()
+            except Exception as e:
+                self.logger.debug(f"Error removing old items: {e}")
             
-            # Also remove any existing widgets with these IDs
-            for contact in contacts:
-                contact_name = contact.get("name", "Unknown")
-                contact_id = f"contact-{sanitize_id(contact_name)}"
-                try:
-                    existing = self.query_one(f"#{contact_id}", ListItem)
-                    if existing:
-                        existing.remove()
-                except Exception:
-                    pass  # Widget doesn't exist, that's fine
+            # Now clear the list and mapping
+            self.contacts_list.clear()
+            self._contact_id_map.clear()
             
             for contact in contacts:
                 contact_name = contact.get("name", "Unknown")
@@ -1251,13 +1300,14 @@ class MeshTUI(App):
                         actual_sender = signature[:8]  # Show short key if unknown
                 
                 # Format sender display with timestamps
-                if (msg_type == "room" or is_room_server) and actual_sender:
+                if is_from_me:
+                    # Message sent by me (based on pubkey) - always show as "You"
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {content}\n")
+                elif (msg_type == "room" or is_room_server) and actual_sender:
                     display_sender = f"{sender} / {actual_sender}"
                     self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {content}\n")
                 elif msg_type == "room" or is_room_server:
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/cyan] {content}\n")
-                elif sender == "Me":
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {content}\n")
+                    self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/dim] {content}\n")
                 elif self.current_contact and sender == self.current_contact:
                     self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n")
                 elif msg_type == "channel":

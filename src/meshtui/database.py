@@ -277,6 +277,37 @@ class MessageDatabase:
             self.logger.error(f"Failed to store contact: {e}")
             return False
     
+    def delete_contact(self, pubkey: str) -> bool:
+        """Delete a contact from the database.
+        
+        Args:
+            pubkey: The public key of the contact to delete
+            
+        Returns:
+            True if successful
+        """
+        try:
+            cursor = self.conn.cursor()
+            
+            # Delete the contact
+            cursor.execute("DELETE FROM contacts WHERE pubkey = ?", (pubkey,))
+            
+            # Also delete all messages associated with this contact
+            cursor.execute("""
+                DELETE FROM messages 
+                WHERE sender_pubkey = ? OR recipient_pubkey = ?
+            """, (pubkey, pubkey))
+            
+            self.conn.commit()
+            
+            deleted_contacts = cursor.execute("SELECT changes()").fetchone()[0]
+            self.logger.info(f"Deleted contact with pubkey {pubkey[:12]}... ({deleted_contacts} rows)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to delete contact: {e}")
+            return False
+    
     def get_messages_for_contact(self, contact_name_or_pubkey: str, limit: int = 1000) -> List[Dict[str, Any]]:
         """Get messages for a specific contact by pubkey or name.
         

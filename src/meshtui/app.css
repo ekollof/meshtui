@@ -137,6 +137,12 @@ RichLog {
     margin: 1 0 1 0;
 }
 
+#delete-contact-btn {
+    width: 18;
+    height: 3;
+    margin: 1 0 1 0;
+}
+
 #send-btn {
     width: 12;
     height: 3;

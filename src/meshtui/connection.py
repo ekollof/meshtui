@@ -49,6 +49,11 @@ class MeshConnection:
         self.messages: List[Dict[str, Any]] = []  # In-memory cache for quick access
         self.logger = logging.getLogger("meshtui.connection")
         
+        # Enable DEBUG logging for meshcore to see raw packets
+        meshcore_logger = logging.getLogger("meshcore")
+        meshcore_logger.setLevel(logging.DEBUG)
+        self.logger.info("🔍 Enabled DEBUG logging for meshcore library (raw packet logging)")
+        
         # Managers (will be initialized after connection)
         self.contacts: Optional[ContactManager] = None
         self.channels: Optional[ChannelManager] = None
@@ -59,6 +64,7 @@ class MeshConnection:
         
         # Callbacks for UI updates
         self._message_callback = None
+        self._contacts_callback = None
         
         # Unread message tracking
         self.unread_counts: Dict[str, int] = {}  # contact_name -> unread count
@@ -468,7 +474,6 @@ class MeshConnection:
     async def _handle_new_contact(self, event):
         """Handle new contact event - store immediately."""
         self.logger.info(f"📡 EVENT: New contact detected: {event.payload}")
-        print(f"DEBUG: New contact event received: {event.payload}")
         
         # Store new contact immediately
         contact_data = event.payload or {}
@@ -482,7 +487,6 @@ class MeshConnection:
     async def _handle_advertisement(self, event):
         """Handle advertisement event - update contact when they broadcast."""
         self.logger.info(f"📡 EVENT: Advertisement received: {event.payload}")
-        print(f"DEBUG: Advertisement event received: {event.payload}")
         
         # Extract contact info from advertisement
         adv_data = event.payload or {}
@@ -507,14 +511,13 @@ class MeshConnection:
                 self.db.store_contact(contact_data, is_me=False)
                 self.logger.info(f"Created new contact from advertisement: {contact_data.get('name')}")
                 
-                # Trigger contacts refresh to update UI
-                if self._message_callback:
-                    self._message_callback(None)
+                # Trigger contacts refresh to update UI (with small delay to avoid overwhelming device)
+                await asyncio.sleep(0.5)
+                await self.refresh_contacts()
 
     async def _handle_path_update(self, event):
         """Handle path update event."""
         self.logger.info(f"📡 EVENT: Path update: {event.payload}")
-        print(f"DEBUG: Path update event received: {event.payload}")
 
     async def _handle_contacts_update(self, event):
         """Handle contacts list update event."""
@@ -524,14 +527,12 @@ class MeshConnection:
             return
             
         self.logger.info(f"📡 EVENT: Contacts update received")
-        print(f"DEBUG: Contacts update event received")
         # Refresh contacts through the manager
         await self.refresh_contacts()
 
     async def _handle_contact_message(self, event):
         """Handle direct contact message received event."""
         self.logger.info(f"📧 EVENT: Direct message received: {event.payload}")
-        print(f"DEBUG: Direct message received: {event.payload}")
         
         # Store message in the messages list
         msg_data = event.payload or {}
@@ -613,7 +614,6 @@ class MeshConnection:
     async def _handle_channel_message(self, event):
         """Handle channel message received event."""
         self.logger.info(f"📢 EVENT: Channel message received: {event.payload}")
-        print(f"DEBUG: Channel message received: {event.payload}")
         
         # Store message in the messages list
         msg_data = event.payload or {}
@@ -685,7 +685,6 @@ class MeshConnection:
     async def _handle_channel_info(self, event):
         """Handle channel information event."""
         self.logger.info(f"📻 EVENT: Channel info: {event.payload}")
-        print(f"DEBUG: Channel info received: {event.payload}")
         
         # Store channel info
         if not hasattr(self, 'channel_info_list'):
@@ -709,7 +708,6 @@ class MeshConnection:
         """Refresh the contacts list."""
         if not self.meshcore:
             self.logger.warning("Cannot refresh contacts: no meshcore connection")
-            print("DEBUG: Cannot refresh contacts - no meshcore connection")
             return
 
         # Prevent refresh loops
@@ -720,14 +718,12 @@ class MeshConnection:
         self._refreshing_contacts = True
         try:
             self.logger.debug("Refreshing contacts via ContactManager...")
-            print("DEBUG: Refreshing contacts via ContactManager...")
             
             # Delegate to ContactManager
             if self.contacts:
                 await self.contacts.refresh()
                 contact_list = self.contacts.get_all()
                 self.logger.info(f"Successfully refreshed {len(contact_list)} contacts")
-                print(f"DEBUG: Successfully refreshed {len(contact_list)} contacts")
                 
                 # Store contacts in database
                 if self.db:
@@ -743,20 +739,23 @@ class MeshConnection:
                     )
             else:
                 self.logger.error("ContactManager not initialized")
-                print("DEBUG: ContactManager not initialized")
                 
         except asyncio.TimeoutError:
             self.logger.error("Timeout refreshing contacts")
-            print("DEBUG: Timeout refreshing contacts")
         except Exception as e:
             self.logger.error(f"Failed to refresh contacts: {e}")
-            print(f"DEBUG: Failed to refresh contacts: {e}")
             import traceback
 
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
-            print(f"DEBUG: Traceback: {traceback.format_exc()}")
         finally:
             self._refreshing_contacts = False
+            
+            # Notify UI that contacts were updated
+            if self._contacts_callback:
+                try:
+                    self._contacts_callback()
+                except Exception as e:
+                    self.logger.error(f"Error in contacts callback: {e}")
 
     async def send_message(self, recipient_name: str, message: str) -> Optional[Dict[str, Any]]:
         """Send a direct message to a contact.
@@ -900,9 +899,6 @@ class MeshConnection:
             if not contact:
                 self.logger.error(f"Room '{room_name}' not found")
                 return False
-
-            self.logger.debug(f"🔍 Room contact dict keys: {contact.keys()}")
-            self.logger.debug(f"🔍 Room contact: {contact}")
 
             # Verify it's a room server (type 3)
             if not self.contacts.is_room_server(contact):
@@ -1085,6 +1081,15 @@ class MeshConnection:
                      Signature: callback(sender, text, msg_type, channel_name=None)
         """
         self._message_callback = callback
+
+    def set_contacts_callback(self, callback):
+        """Set callback for contacts list updates.
+        
+        Args:
+            callback: Function to call when contacts list changes.
+                     Signature: callback()
+        """
+        self._contacts_callback = callback
 
     async def disconnect(self):
         """Disconnect from the device.
@@ -1577,6 +1582,58 @@ class MeshConnection:
         except Exception as e:
             self.logger.error(f"Error getting available nodes: {e}")
             return []
+
+    async def remove_contact(self, contact_name: str) -> bool:
+        """Remove a contact from the device.
+        
+        Args:
+            contact_name: Name of the contact to remove
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.meshcore or not self.contacts:
+            self.logger.error("Cannot remove contact - not connected")
+            return False
+        
+        try:
+            # Get contact to find pubkey
+            contact = self.contacts.get_by_name(contact_name)
+            if not contact:
+                self.logger.error(f"Contact '{contact_name}' not found")
+                return False
+            
+            pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+            if not pubkey:
+                self.logger.error(f"Contact '{contact_name}' has no public key")
+                return False
+            
+            self.logger.info(f"Removing contact '{contact_name}' ({pubkey[:12]}...)")
+            
+            # Remove from device
+            result = await self.meshcore.commands.remove_contact(pubkey)
+            
+            if result.type == EventType.OK:
+                self.logger.info(f"✓ Contact '{contact_name}' removed from device")
+                
+                # Remove from database if present
+                if self.db:
+                    self.db.delete_contact(pubkey)
+                    self.logger.debug(f"Removed '{contact_name}' from database")
+                
+                # Refresh contacts to update UI
+                await self.refresh_contacts()
+                
+                return True
+            else:
+                self.logger.error(f"✗ Failed to remove contact: {result}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error removing contact: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
+            return False
 
     async def get_channels(self) -> List[Dict[str, Any]]:
         """Get list of available channels.

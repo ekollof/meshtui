@@ -29,7 +29,11 @@ class ContactManager:
         try:
             result = await self.meshcore.commands.get_contacts()
             if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to get contacts: {result}")
+                error_code = result.payload.get('error_code', 'unknown')
+                if error_code == 4:
+                    self.logger.warning(f"Device busy, skipping contact refresh (error code 4)")
+                else:
+                    self.logger.error(f"Failed to get contacts: {result}")
                 return
             
             # Convert contacts dict to list

@@ -35,8 +35,7 @@ class RoomManager:
 
     async def _handle_login_success(self, event):
         """Handle LOGIN_SUCCESS event to capture admin status."""
-        print(f"🔔🔔🔔 LOGIN_SUCCESS EVENT RECEIVED! Event: {event}")  # BYPASS LOGGING
-        self.logger.debug(f"🔔 _handle_login_success called! Event: {event}")
+        self.logger.debug(f"_handle_login_success called with event: {event}")
         pubkey_prefix = event.payload.get('pubkey_prefix', '')
         is_admin = event.payload.get('is_admin', False)
         permissions = event.payload.get('permissions', 0)
@@ -55,8 +54,7 @@ class RoomManager:
 
     async def _handle_login_failed(self, event):
         """Handle LOGIN_FAILED event."""
-        print(f"❌❌❌ LOGIN_FAILED EVENT RECEIVED! Event: {event}")  # BYPASS LOGGING
-        self.logger.debug(f"🔔 _handle_login_failed called! Event: {event}")
+        self.logger.debug(f"_handle_login_failed called with event: {event}")
         pubkey_prefix = event.payload.get('pubkey_prefix', '')
         self.logger.warning(f"Login failed for {pubkey_prefix}")
 
@@ -135,18 +133,12 @@ class RoomManager:
 
             self.logger.info(f"Attempting to login to room '{room_name}' (pubkey: {pubkey[:16]}...)")
 
-            # Send login request with contact dict (not just key)
-            self.logger.debug(f"Calling send_login with contact type: {type(contact)}, password length: {len(password)}")
+            # Send login request with contact dict
             result = await self.meshcore.commands.send_login(contact, password)
-
-            self.logger.info(f"send_login result: type={result.type}, payload={result.payload if hasattr(result, 'payload') else 'N/A'}")
 
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to send login: {result}")
                 return False
-
-            # Note: Room servers respond with LOGIN_SUCCESS/FAIL directly, they don't ACK login packets
-            self.logger.debug(f"Login packet sent, now waiting for LOGIN_SUCCESS or LOGIN_FAILED event")
 
             # Wait for LOGIN_SUCCESS or LOGIN_FAILED event
             # (_wait_for_login_event has its own 10s timeout)
