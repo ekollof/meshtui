@@ -6,6 +6,7 @@ Orchestrates transport, contacts, channels, and rooms.
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 from enum import Enum
@@ -65,6 +66,9 @@ class MeshConnection:
         # Callbacks for UI updates
         self._message_callback = None
         self._contacts_callback = None
+        
+        # ACK tracking for sent messages
+        self._pending_acks: Dict[str, Dict[str, Any]] = {}  # ack_code -> {timestamp, repeats, message_preview}
         
         # Unread message tracking
         self.unread_counts: Dict[str, int] = {}  # contact_name -> unread count
@@ -712,14 +716,24 @@ class MeshConnection:
         # Extract ACK code
         ack_code = event.payload.get('code', '')
         
-        # Notify UI if callback is set
-        if self._message_callback:
-            try:
-                # Send special notification with empty message to indicate ACK
-                # The UI can display this as "✓ Message repeated by network"
-                self._message_callback("System", f"✓ Message acknowledged (code: {ack_code[:8]})", "ack")
-            except Exception as e:
-                self.logger.error(f"Error in ACK callback: {e}")
+        # Check if this is a tracked message
+        if ack_code in self._pending_acks:
+            ack_info = self._pending_acks[ack_code]
+            ack_info['repeats'] += 1
+            repeats = ack_info['repeats']
+            
+            # Show updated status
+            if self._message_callback:
+                try:
+                    if repeats == 1:
+                        self._message_callback("System", f"✓ Heard {repeats} repeat", "status")
+                    else:
+                        self._message_callback("System", f"✓ Heard {repeats} repeats", "status")
+                except Exception as e:
+                    self.logger.error(f"Error in ACK callback: {e}")
+        else:
+            # Unknown ACK - just log it
+            self.logger.debug(f"Received ACK for unknown message: {ack_code[:8]}")
 
     async def refresh_contacts(self):
         """Refresh the contacts list."""
@@ -795,6 +809,21 @@ class MeshConnection:
             
             if not status_info:
                 return None
+            
+            # Track the ACK code if available
+            if status_info.get('expected_ack'):
+                ack_code = status_info['expected_ack'].hex()
+                self._pending_acks[ack_code] = {
+                    'timestamp': time.time(),
+                    'repeats': 0,
+                    'message_preview': message[:30],
+                    'recipient': recipient_name
+                }
+                self.logger.debug(f"Tracking ACK for message: {ack_code}")
+                
+                # Show "Sent" notification
+                if self._message_callback:
+                    self._message_callback("System", "✓ Sent", "status")
             
             # Look up contact to get pubkey for storage
             contact = self.contacts.get_by_name(recipient_name)

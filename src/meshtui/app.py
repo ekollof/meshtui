@@ -380,7 +380,18 @@ class MeshTUI(App):
             channel_name: Channel name if msg_type is 'channel'
             txt_type: Text type (0=regular message, 1=command response)
         """
-        # Handle ACK notifications (message repeated by repeater)
+        # Handle status notifications (sent/ACK from repeaters)
+        if msg_type == 'status':
+            self.logger.debug(f"📋 Status notification: {text}")
+            try:
+                # Show status in chat area if we're viewing a channel or contact
+                if self.current_contact or self.current_channel:
+                    self.chat_area.write(f"[dim]{text}[/dim]")
+            except Exception as e:
+                self.logger.error(f"Failed to display status: {e}")
+            return
+        
+        # Handle ACK notifications (message repeated by repeater) - legacy
         if msg_type == 'ack':
             self.logger.debug(f"📋 ACK notification: {text}")
             try:
