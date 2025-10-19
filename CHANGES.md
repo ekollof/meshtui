@@ -1,6 +1,28 @@
 # MeshTUI Changelog
 
-## Recent Refactoring (Latest)
+## Latest Updates (2025-01-19)
+
+### Per-Device Database Implementation
+- **Feature**: Each connected device now gets its own database file
+- **Location**: `~/.config/meshtui/devices/{device_pubkey[:16]}.db`
+- **Benefit**: Prevents data collision when switching between different devices
+- **Automatic**: Database is initialized after connection using device public key
+- **Backward Compatible**: Legacy `meshtui.db` remains for reference
+
+### Room Messaging Fix
+- **Issue**: Room messages from other users were not appearing in real-time
+- **Root Cause**: Database query was filtering out messages from other room participants
+- **Fix**: Simplified room message query to show ALL messages to/from room
+- **Result**: Room conversations now display messages from all participants in real-time
+
+### Technical Improvements
+- Added `_initialize_device_database()` method in connection.py
+- Database initialization moved to post-connection phase
+- Added safety checks for all database operations (`if self.db:`)
+- Updated all three connection methods (BLE, Serial, TCP)
+- Maintains backward compatibility with existing installations
+
+## Recent Refactoring (Previous)
 
 ### Modular Architecture
 - **Split into focused modules** for better maintainability
@@ -170,7 +192,14 @@
 5. Use "Send Command" to execute commands
 6. Click "Get Status" to request node status
 
-## Files Modified
+## Files Modified (Latest Changes)
+- `src/meshtui/connection.py` - Per-device database initialization, safety checks
+- `src/meshtui/database.py` - Simplified room message queries
+- `src/meshtui/app.py` - Room message display in periodic refresh
+- `CLAUDE.md` - Updated documentation for per-device databases
+- `README.md` - Added per-device database section
+
+## Files Modified (Previous Changes)
 - `src/meshtui/connection.py` - Major enhancements to connection and event handling
 - `src/meshtui/app.py` - UI improvements and new features
 - `.github/copilot-instructions.md` - New comprehensive coding guidelines

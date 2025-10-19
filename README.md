@@ -181,6 +181,40 @@ To see contacts in the list:
 
 ## Troubleshooting
 
+### Serial Port Permissions (Linux/macOS)
+
+If you get permission errors when connecting via serial port, you need to add your user to the appropriate group:
+
+**Linux:**
+```bash
+# Add your user to the dialout group
+sudo usermod -a -G dialout $USER
+
+# Log out and log back in for changes to take effect
+# Or use: newgrp dialout
+```
+
+**macOS:**
+```bash
+# macOS typically doesn't require special permissions
+# If you encounter issues, check /dev/tty.* or /dev/cu.* devices
+ls -l /dev/tty.* /dev/cu.*
+```
+
+**Verify access:**
+```bash
+# Check group membership
+groups
+
+# Test device access (replace with your device path)
+ls -l /dev/ttyUSB0
+```
+
+**Common error messages indicating permission issues:**
+- "Permission denied" when opening serial port
+- "Could not open port /dev/ttyUSB0"
+- "Access denied"
+
 ### Log Files for Debugging
 
 All application logs are automatically saved to a log file for postmortem analysis:
@@ -199,8 +233,10 @@ All application logs are automatically saved to a log file for postmortem analys
 
 ### Common Issues
 
+- **Serial port permission denied**: Add your user to the `dialout` group (Linux) - see above
 - **No contacts appearing**: See "Why Contacts Don't Appear" above
 - **Connection fails**: Check serial port permissions and device power
+- **Device not found**: Ensure the device is connected and appears in `/dev/ttyUSB*` or `/dev/ttyACM*`
 - **Logs not updating**: Ensure the log panel is visible in the TUI
 - **Performance issues**: Check log file size and rotate if necessary
 
@@ -208,8 +244,21 @@ All application logs are automatically saved to a log file for postmortem analys
 
 Configuration files are stored in `$HOME/.config/meshtui/`
 
-- Device connections and preferences are automatically saved
-- Message history and contact lists persist between sessions
+### Per-Device Databases
+
+MeshTUI creates a separate database for each connected device to prevent data collision:
+
+- **Location**: `$HOME/.config/meshtui/devices/{device_pubkey}.db`
+- **Automatic**: Database is created on first connection to each device
+- **Isolated**: Each device has its own messages, contacts, and settings
+- **Seamless**: Switching devices automatically uses the correct database
+
+When you connect to a device for the first time, a new database is created using the device's unique public key. This ensures that messages and contacts from one device don't mix with another device's data.
+
+### Other Configuration Files
+
+- **Device connections**: Preferences and last-used BLE address are saved
+- **Message history**: All conversations persist between sessions
 - **Log files**: All application logs are saved to `meshtui.log` for postmortem analysis
   - Location: `$HOME/.config/meshtui/meshtui.log`
   - Includes DEBUG level logs for detailed troubleshooting

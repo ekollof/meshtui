@@ -81,14 +81,18 @@
 **Key Class**: `MeshConnection`
 
 **Critical Methods**:
-- `connect()` - Establish connection (BLE/Serial/TCP)
+- `connect_serial()`, `connect_ble()`, `connect_tcp()` - Establish connections
+- `_initialize_device_database()` - Initialize per-device database using device public key
 - `_setup_event_handlers()` - Subscribe to meshcore events
-- `_handle_event()` - Process incoming events from radio
+- `_handle_contact_message()` - Process incoming messages (including room messages)
+- `_handle_channel_message()` - Process channel messages
 - `send_message()` - Send message to contact/channel
 - `get_contacts()` - Retrieve contact list
 - `get_channels()` - Retrieve channel list
 
 **Event Handling**: Subscribes to meshcore events and updates managers/database
+
+**Database Initialization**: Database is created per-device after connection, using the device's public key from `meshcore.self_info`
 
 ### 3. transport.py (269 lines) - Transport Layer
 **Purpose**: Abstract BLE/Serial/TCP connectivity
@@ -133,7 +137,13 @@
 ### 7. database.py (688 lines) - SQLite Persistence
 **Purpose**: Message storage, contact persistence, unread tracking
 
-**Key Class**: `Database`
+**Key Class**: `MessageDatabase`
+
+**Per-Device Databases**:
+- Each connected device gets its own database file
+- Database path: `~/.config/meshtui/devices/{device_pubkey[:16]}.db`
+- Initialized after connection when device public key is available
+- Prevents data collision when switching between devices
 
 **Schema**:
 - `messages` - Message history (sender, recipient, text, timestamp, channel)
@@ -142,9 +152,9 @@
 
 **Methods**:
 - `store_message()` - Save message to history
-- `get_messages_with()` - Retrieve conversation history
+- `get_messages_for_contact()` - Retrieve conversation history (including room messages from all users)
 - `mark_as_read()` - Update read status
-- `persist_contact()` - Save contact to database
+- `store_contact()` - Save contact to database
 
 ---
 
@@ -265,7 +275,9 @@ meshtui --address C2:2B:A1:D5:3E:B6          # BLE connection
 ### Configuration and Data
 - **Config dir**: `~/.config/meshtui/`
 - **Log file**: `~/.config/meshtui/meshtui.log`
-- **Database**: `~/.config/meshtui/meshtui.db`
+- **Databases**:
+  - Per-device: `~/.config/meshtui/devices/{pubkey}.db` (one per device)
+  - Legacy: `~/.config/meshtui/meshtui.db` (deprecated, for backward compatibility)
 - **Saved BLE address**: `~/.config/meshtui/default_address`
 
 ### Documentation
@@ -315,9 +327,13 @@ meshtui --address C2:2B:A1:D5:3E:B6          # BLE connection
 **Solution**: Normal behavior - contacts populate after mesh communication
 
 ### Serial Port Permissions
-**Symptom**: Connection fails on Linux
-**Cause**: User not in `dialout` group
-**Solution**: `sudo usermod -a -G dialout $USER` and logout/login
+**Symptom**: Connection fails with "Permission denied" or "Could not open port" errors
+**Cause**: User not in `dialout` group (Linux) or insufficient permissions
+**Solution**:
+- **Linux**: `sudo usermod -a -G dialout $USER` then logout/login (or use `newgrp dialout`)
+- **macOS**: Usually no special permissions needed, check device ownership with `ls -l /dev/tty.*`
+- **Verify**: Run `groups` to confirm group membership, or `ls -l /dev/ttyUSB0` to check device permissions
+**Impact**: Cannot connect to serial devices until permissions are fixed
 
 ### BLE Scanning Requires Bluetooth Hardware
 **Symptom**: BLE scan fails
@@ -364,16 +380,18 @@ device.commands.room.logout()
 
 ## Recent Development History
 
-**Last 4 commits**:
-1. **1f1691f** - Add Node Management tab with command interface and reference
-2. **3c20166** - Checkpoint: Before pubkey-based refactor
-3. **33164be** - Update copilot instructions to use GitKraken for git operations
-4. **26f51c1** - Add SQLite database with persistent message storage and unread tracking
+**Latest Changes**:
+1. **Per-Device Databases** - Each device now gets its own database file to prevent data collision
+2. **Room Messaging Fix** - Fixed room messages from other users not appearing in real-time
+3. **Device Settings UI** - Added comprehensive device configuration tab
+4. **Improved Autodetection** - Enhanced serial device identification reliability
+5. **Unit Test Suite** - Added comprehensive pytest test coverage
 
 **Recent Focus Areas**:
-- Node administration features
-- Database persistence
-- Event-driven architecture improvements
+- Per-device data isolation
+- Room server messaging improvements
+- Device configuration management
+- Test coverage and reliability
 - Connection stability
 
 ---
@@ -433,9 +451,10 @@ python -m meshtui            # Run application
 ### Debugging
 ```bash
 tail -f ~/.config/meshtui/meshtui.log  # Watch logs in real-time
-sqlite3 ~/.config/meshtui/meshtui.db   # Inspect database
-ls -la /dev/ttyUSB*          # Check serial devices
-bluetoothctl                 # Check BLE devices
+sqlite3 ~/.config/meshtui/devices/*.db # Inspect device databases
+ls -la /dev/ttyUSB* /dev/ttyACM*       # Check serial devices and permissions
+groups                                  # Check if user is in dialout group
+bluetoothctl                            # Check BLE devices
 ```
 
 ---

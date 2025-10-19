@@ -69,14 +69,12 @@ class MeshConnection:
         # Configuration
         self.config_dir = Path.home() / ".config" / "meshtui"
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Database for persistent storage
+
+        # Database for persistent storage (will be initialized per-device after connection)
         from .database import MessageDatabase
-        self.db = MessageDatabase(self.config_dir / "meshtui.db")
-        
-        # Load recent messages into cache
-        self._load_recent_messages()
-        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.db: Optional[MessageDatabase] = None
+        self._db_initialized = False
+
         self.address_file = self.config_dir / "default_address"
         
         # Transport layers
@@ -240,7 +238,10 @@ class MeshConnection:
 
             # Setup event handlers
             await self._setup_event_handlers()
-            
+
+            # Initialize device-specific database
+            self._initialize_device_database()
+
             # Initialize managers
             self._initialize_managers()
 
@@ -271,6 +272,9 @@ class MeshConnection:
 
             # Setup event handlers
             await self._setup_event_handlers()
+
+            # Initialize device-specific database
+            self._initialize_device_database()
 
             self.logger.info(
                 f"Connected to {self.device_info.get('name', 'Unknown')} via TCP"
@@ -331,6 +335,9 @@ class MeshConnection:
             await self._setup_event_handlers()
             self.logger.debug("Event handlers set up")
 
+            # Initialize device-specific database
+            self._initialize_device_database()
+
             # Initialize managers
             self._initialize_managers()
 
@@ -365,11 +372,59 @@ class MeshConnection:
                 self.meshcore = None
             return False
 
+    def _initialize_device_database(self):
+        """Initialize database specific to this device using its public key.
+
+        This creates a per-device database in ~/.config/meshtui/devices/<pubkey>.db
+        to avoid data collision when connecting to different devices.
+        """
+        if self._db_initialized:
+            return
+
+        try:
+            # Get device public key from self_info
+            device_pubkey = None
+            if self.meshcore and hasattr(self.meshcore, 'self_info'):
+                self_info = self.meshcore.self_info
+                device_pubkey = self_info.get('public_key')
+
+            # Create devices directory
+            devices_dir = self.config_dir / "devices"
+            devices_dir.mkdir(parents=True, exist_ok=True)
+
+            if device_pubkey:
+                # Use first 16 chars of pubkey for filename (enough to be unique)
+                pubkey_short = device_pubkey[:16]
+                db_path = devices_dir / f"{pubkey_short}.db"
+                self.logger.info(f"Using device-specific database: {db_path.name}")
+            else:
+                # Fallback: use temporary database if pubkey not available
+                self.logger.warning("Device public key not available, using temporary database")
+                db_path = self.config_dir / "meshtui-temp.db"
+
+            # Initialize database for this device
+            from .database import MessageDatabase
+            self.db = MessageDatabase(db_path)
+            self._db_initialized = True
+
+            # Load recent messages into cache
+            self._load_recent_messages()
+
+            self.logger.debug(f"Database initialized at {db_path}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to initialize device database: {e}")
+            # Fallback to legacy database
+            self.logger.info("Falling back to legacy database")
+            from .database import MessageDatabase
+            self.db = MessageDatabase(self.config_dir / "meshtui.db")
+            self._db_initialized = True
+
     def _initialize_managers(self):
         """Initialize the contact, channel, and room managers."""
         if not self.meshcore:
             return
-        
+
         self.logger.debug("Initializing managers...")
         self.contacts = ContactManager(self.meshcore)
         self.channels = ChannelManager(self.meshcore)
@@ -417,7 +472,7 @@ class MeshConnection:
         
         # Store new contact immediately
         contact_data = event.payload or {}
-        if contact_data.get('public_key') or contact_data.get('pubkey'):
+        if self.db and (contact_data.get('public_key') or contact_data.get('pubkey')):
             self.db.store_contact(contact_data, is_me=False)
             self.logger.info(f"Stored new contact: {contact_data.get('name', 'Unknown')}")
         
@@ -436,11 +491,11 @@ class MeshConnection:
         if pubkey and self.contacts:
             # Try to find this contact
             contact = self.contacts.get_by_key(pubkey)
-            if contact:
+            if self.db and contact:
                 # Update their last_seen timestamp
                 self.db.store_contact(contact, is_me=False)
                 self.logger.debug(f"Updated contact {contact.get('name')} from advertisement")
-            else:
+            elif self.db:
                 # New contact from advertisement - create minimal contact record
                 contact_data = {
                     'public_key': pubkey,
@@ -527,10 +582,11 @@ class MeshConnection:
         })
         
         # Store in database
-        self.db.store_message(self.messages[-1])
-        
+        if self.db:
+            self.db.store_message(self.messages[-1])
+
         # Update contact last_seen when receiving a message from them
-        if self.contacts and sender_key:
+        if self.db and self.contacts and sender_key:
             contact = self.contacts.get_by_key(sender_key)
             if contact:
                 self.db.store_contact(contact, is_me=False)
@@ -600,14 +656,15 @@ class MeshConnection:
         })
         
         # Store in database
-        self.db.store_message(self.messages[-1])
-        
+        if self.db:
+            self.db.store_message(self.messages[-1])
+
         # Update contact last_seen when receiving a channel message from them
-        if self.contacts and sender_key:
+        if self.db and self.contacts and sender_key:
             contact = self.contacts.get_by_key(sender_key)
             if contact:
                 self.db.store_contact(contact, is_me=False)
-        elif self.contacts and sender_name != 'Unknown':
+        elif self.db and self.contacts and sender_name != 'Unknown':
             contact = self.contacts.get_by_name(sender_name)
             if contact:
                 self.db.store_contact(contact, is_me=False)
@@ -670,8 +727,9 @@ class MeshConnection:
                 print(f"DEBUG: Successfully refreshed {len(contact_list)} contacts")
                 
                 # Store contacts in database
-                for contact in contact_list:
-                    self.db.store_contact(contact)
+                if self.db:
+                    for contact in contact_list:
+                        self.db.store_contact(contact)
                 
                 if contact_list:
                     self.logger.debug(
@@ -737,8 +795,9 @@ class MeshConnection:
                 'sent': True,
             }
             self.messages.append(sent_msg)
-            self.db.store_message(sent_msg)
-            
+            if self.db:
+                self.db.store_message(sent_msg)
+
             self.logger.info(f"Sent and stored message to {recipient_name}")
             return status_info
             
@@ -1007,24 +1066,29 @@ class MeshConnection:
 
     def get_messages_for_contact(self, contact_name: str) -> List[Dict[str, Any]]:
         """Get messages for a specific contact or room from database.
-        
+
         Args:
             contact_name: Name of contact or room
-            
+
         Returns:
             List of message dictionaries
         """
+        if not self.db:
+            return []
         return self.db.get_messages_for_contact(contact_name, limit=1000)
 
     def get_messages_for_channel(self, channel_name: str) -> List[Dict[str, Any]]:
         """Get messages for a specific channel from database.
-        
+
         Args:
             channel_name: "Public" or channel name
-            
+
         Returns:
             List of message dictionaries
         """
+        if not self.db:
+            return []
+
         # Determine channel index
         if channel_name == "Public":
             channel_idx = 0
@@ -1034,40 +1098,50 @@ class MeshConnection:
                 channel_idx = int(channel_name.split()[-1])
             except:
                 channel_idx = 0
-        
+
         return self.db.get_messages_for_channel(channel_idx, limit=1000)
     
     def mark_as_read(self, contact_or_channel: str):
         """Mark all messages from a contact/channel as read.
-        
+
         Args:
             contact_or_channel: Name of contact, room, or channel
         """
+        if not self.db:
+            return
         import time
         self.db.mark_as_read(contact_or_channel, int(time.time()))
         self.logger.debug(f"Marked {contact_or_channel} as read")
     
     def get_unread_count(self, contact_or_channel: str) -> int:
         """Get the number of unread messages for a contact/channel.
-        
+
         Args:
             contact_or_channel: Name of contact, room, or channel
-            
+
         Returns:
             Number of unread messages
         """
+        if not self.db:
+            return 0
         return self.db.get_unread_count(contact_or_channel)
     
     def get_all_unread_counts(self) -> Dict[str, int]:
         """Get unread counts for all contacts/channels.
-        
+
         Returns:
             Dictionary mapping contact/channel names to unread counts
         """
+        if not self.db:
+            return {}
         return self.db.get_all_unread_counts()
     
     def _load_recent_messages(self):
         """Load recent messages from database into memory cache."""
+        if not self.db:
+            self.logger.warning("Database not initialized, skipping message load")
+            return
+
         try:
             # Load recent conversations to initialize unread counts
             conversations = self.db.get_recent_conversations(limit=50)
@@ -1366,8 +1440,9 @@ class MeshConnection:
                 'sent': True,
             }
             self.messages.append(sent_msg)
-            self.db.store_message(sent_msg)
-            
+            if self.db:
+                self.db.store_message(sent_msg)
+
             self.logger.info(f"Sent and stored message to channel {channel_id}: {message}")
             return True
             

@@ -312,34 +312,16 @@ class MessageDatabase:
             my_pubkey = me_row[0] if me_row else None
             
             if is_room:
-                # For room servers: get messages TO the room, or FROM the room where WE are the sender
-                # Don't include messages from room where someone else is the sender
-                if my_pubkey:
-                    cursor.execute("""
-                        SELECT * FROM messages 
-                        WHERE (
-                            -- Messages TO the room (we sent)
-                            (recipient_pubkey = ? OR ? LIKE recipient_pubkey || '%')
-                            OR
-                            -- Messages FROM the room where WE are the actual sender
-                            ((sender_pubkey = ? OR ? LIKE sender_pubkey || '%')
-                             AND (actual_sender_pubkey = ? OR ? LIKE actual_sender_pubkey || '%'
-                                  OR signature = ? OR ? LIKE signature || '%'))
-                        )
-                        AND type IN ('contact', 'room')
-                        ORDER BY timestamp ASC, received_at ASC
-                        LIMIT ?
-                    """, (pubkey, pubkey, pubkey, pubkey, my_pubkey, my_pubkey, my_pubkey, my_pubkey, limit))
-                else:
-                    # No "me" contact - just show messages to/from room
-                    cursor.execute("""
-                        SELECT * FROM messages 
-                        WHERE (sender_pubkey = ? OR ? LIKE sender_pubkey || '%'
-                            OR recipient_pubkey = ? OR ? LIKE recipient_pubkey || '%')
-                        AND type IN ('contact', 'room')
-                        ORDER BY timestamp ASC, received_at ASC
-                        LIMIT ?
-                    """, (pubkey, pubkey, pubkey, pubkey, limit))
+                # For room servers: get ALL messages to/from the room
+                # This includes messages we sent TO the room, and ALL messages FROM the room
+                cursor.execute("""
+                    SELECT * FROM messages
+                    WHERE (sender_pubkey = ? OR ? LIKE sender_pubkey || '%'
+                        OR recipient_pubkey = ? OR ? LIKE recipient_pubkey || '%')
+                    AND type IN ('contact', 'room')
+                    ORDER BY timestamp ASC, received_at ASC
+                    LIMIT ?
+                """, (pubkey, pubkey, pubkey, pubkey, limit))
             else:
                 # For regular contacts: get messages to/from this contact
                 # Note: Messages may have short pubkey prefixes, so we check both directions:

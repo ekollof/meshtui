@@ -1251,11 +1251,11 @@ class MeshTUI(App):
                 sender = msg.get("sender", "Unknown")
                 content = msg.get("text", "")
                 msg_type = msg.get("type", "")
-                
+
                 # Filter based on current view
                 if self.current_contact:
-                    # Show messages from/to this contact
-                    if msg_type == "contact" and sender == self.current_contact:
+                    # Show messages from/to this contact (including room messages)
+                    if (msg_type == "contact" or msg_type == "room") and sender == self.current_contact:
                         self.chat_area.write(f"[green]{sender}:[/green] {content}\n")
                 elif self.current_channel is not None:
                     # Show messages from this channel
