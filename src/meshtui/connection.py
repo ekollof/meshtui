@@ -469,6 +469,7 @@ class MeshConnection:
         self.meshcore.subscribe(EventType.ADVERTISEMENT, self._handle_advertisement)
         self.meshcore.subscribe(EventType.PATH_UPDATE, self._handle_path_update)
         self.meshcore.subscribe(EventType.CHANNEL_INFO, self._handle_channel_info)
+        self.meshcore.subscribe(EventType.ACK, self._handle_ack)
         self.logger.debug("Event handlers subscribed")
 
     async def _handle_new_contact(self, event):
@@ -703,6 +704,22 @@ class MeshConnection:
                     break
             if not found:
                 self.channel_info_list.append(channel_data)
+
+    async def _handle_ack(self, event):
+        """Handle ACK event - message was repeated by a repeater."""
+        self.logger.info(f"📡 EVENT: ACK received: {event.payload}")
+        
+        # Extract ACK code
+        ack_code = event.payload.get('code', '')
+        
+        # Notify UI if callback is set
+        if self._message_callback:
+            try:
+                # Send special notification with empty message to indicate ACK
+                # The UI can display this as "✓ Message repeated by network"
+                self._message_callback("System", f"✓ Message acknowledged (code: {ack_code[:8]})", "ack")
+            except Exception as e:
+                self.logger.error(f"Error in ACK callback: {e}")
 
     async def refresh_contacts(self):
         """Refresh the contacts list."""

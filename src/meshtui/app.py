@@ -376,10 +376,21 @@ class MeshTUI(App):
         Args:
             sender: Name of the sender
             text: Message text
-            msg_type: Type of message ('contact', 'room', or 'channel')
+            msg_type: Type of message ('contact', 'room', 'channel', or 'ack')
             channel_name: Channel name if msg_type is 'channel'
             txt_type: Text type (0=regular message, 1=command response)
         """
+        # Handle ACK notifications (message repeated by repeater)
+        if msg_type == 'ack':
+            self.logger.debug(f"📋 ACK notification: {text}")
+            try:
+                # Show ACK in chat area if we're viewing a channel or contact
+                if self.current_contact or self.current_channel:
+                    self.chat_area.write(f"[dim]{text}[/dim]")
+            except Exception as e:
+                self.logger.error(f"Failed to display ACK: {e}")
+            return
+        
         # Route command responses (txt_type=1) to Node Management output
         if txt_type == 1:
             self.logger.debug(f"📋 Command response from {sender}: {text}")
