@@ -53,3 +53,7 @@ coverage.xml
 # uv
 uv.lock
 .python-version
+
+# Node.js / npm
+package.json
+package-lock.json
