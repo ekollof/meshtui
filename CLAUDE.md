@@ -164,9 +164,16 @@
 ```bash
 git clone <repo>
 cd meshtui
-uv venv                    # Create virtual environment
+python -m venv .venv       # Create virtual environment (or: uv venv)
 source .venv/bin/activate  # Activate (Linux/Mac)
-uv pip install -e .        # Install in development mode
+pip install -e .           # Install in development mode (or: uv pip install -e .)
+```
+
+**For end users**, install via `pipx` or `uv tool install`:
+```bash
+pipx install meshtui       # Recommended: isolates dependencies
+# or
+uv tool install meshtui    # Alternative with uv
 ```
 
 ### Running the Application
@@ -436,9 +443,16 @@ Use GitKraken tools for all git operations (per project guidelines)
 
 ### Package Management
 ```bash
-uv pip install -e .          # Install in dev mode
-uv pip list                  # List installed packages
-uv pip install <package>     # Add dependency
+pip install -e .             # Install in dev mode (or: uv pip install -e .)
+pip list                     # List installed packages (or: uv pip list)
+pip install <package>        # Add dependency (or: uv pip install <package>)
+```
+
+**End user installation**:
+```bash
+pipx install meshtui         # Recommended: isolated environment
+pipx upgrade meshtui         # Upgrade to latest version
+pipx uninstall meshtui       # Uninstall
 ```
 
 ### Testing

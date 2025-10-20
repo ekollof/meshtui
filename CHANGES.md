@@ -1,6 +1,19 @@
 # MeshTUI Changelog
 
-## Latest Updates (2025-10-20)
+## Version 0.1.1 (2025-10-20)
+
+### Documentation Updates
+- **Installation**: Updated documentation to prominently feature `pipx` as the recommended installation method
+- **Development**: Added standard Python `venv` and `pip` workflow alongside `uv` alternatives
+- **Accessibility**: Made project more accessible to developers who don't use `uv`
+- **README.md**: Updated PyPI Installation, Development Installation, and Development sections
+- **CLAUDE.md**: Updated Environment Setup and Package Management sections with `pipx` examples
+
+### Why this update?
+- `pipx` is the standard tool for installing Python CLI applications with proper dependency isolation
+- Documentation now covers the full spectrum: end users (pipx), power users (uv tool), and developers (standard venv/pip or uv)
+
+## Version 0.1.0 (2025-10-20)
 
 ### Channel Creation UI
 - **Feature**: Create custom encrypted channels directly from the UI

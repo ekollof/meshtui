@@ -55,13 +55,15 @@ MeshTUI depends on the [python meshcore](https://github.com/fdlamotte/meshcore_p
 
 ### PyPI Installation
 
-You can install it via `pip` or `uv`:
+You can install it via `pipx` or `uv`:
 
 ```bash
+pipx install meshtui
+# or
 uv tool install meshtui
 ```
 
-This will install the `meshtui` command.
+This will install the `meshtui` command globally and isolate its dependencies.
 
 ### Arch Linux
 
@@ -83,12 +85,14 @@ The `-git` version builds directly from the latest GitHub repository and conflic
 
 ### Development Installation
 
-For development:
+For development, use `uv` or standard `pip`:
 
 ```bash
 git clone <your-repo-url>
 cd meshtui
 uv pip install -e .
+# or with pip in a virtual environment:
+# python -m venv .venv && source .venv/bin/activate && pip install -e .
 ```
 
 ### Requirements
@@ -364,9 +368,9 @@ MeshTUI provides access to all MeshCore functionality through an intuitive inter
 To contribute or modify MeshTUI:
 
 1. Clone the repository
-2. Create a virtual environment: `uv venv`
+2. Create a virtual environment: `python -m venv .venv` or `uv venv`
 3. Activate: `source .venv/bin/activate` (Linux/Mac) or `.venv\Scripts\activate` (Windows)
-4. Install dependencies: `uv pip install -e .`
+4. Install dependencies: `pip install -e .` or `uv pip install -e .`
 5. Run: `python -m meshtui`
 
 ### Project Structure
