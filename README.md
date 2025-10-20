@@ -51,7 +51,11 @@ This allows you to review message delivery history and identify network issues.
 
 ## Installation
 
-MeshTUI depends on the [python meshcore](https://github.com/fdlamotte/meshcore_py) package. You can install it via `pip` or `uv`:
+MeshTUI depends on the [python meshcore](https://github.com/fdlamotte/meshcore_py) package.
+
+### PyPI Installation
+
+You can install it via `pip` or `uv`:
 
 ```bash
 uv tool install meshtui
@@ -59,7 +63,27 @@ uv tool install meshtui
 
 This will install the `meshtui` command.
 
-Alternatively, for development:
+### Arch Linux
+
+For Arch Linux users, PKGBUILD files are available in the `arch/` directory:
+
+**Stable version (from PyPI):**
+```bash
+cd arch/meshtui
+makepkg -si
+```
+
+**Development version (from git):**
+```bash
+cd arch/meshtui-git
+makepkg -si
+```
+
+The `-git` version builds directly from the latest GitHub repository and conflicts with the stable package.
+
+### Development Installation
+
+For development:
 
 ```bash
 git clone <your-repo-url>

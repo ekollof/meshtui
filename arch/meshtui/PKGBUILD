@@ -1,0 +1,41 @@
+# Maintainer: Emiel Kollof <emiel@kollof.nl>
+pkgname=meshtui
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Terminal User Interface for MeshCore companion radios"
+arch=('any')
+url="https://github.com/ekollof/meshtui"
+license=('MIT')
+depends=(
+    'python>=3.10'
+    'python-meshcore>=2.1.9'
+    'python-textual>=0.50.0'
+    'python-requests>=2.28.0'
+    'python-aiohttp>=3.9.0'
+    'python-notify2>=0.3.1'
+    'python-dbus>=1.2.18'
+)
+makedepends=(
+    'python-build'
+    'python-installer'
+    'python-wheel'
+    'python-hatchling'
+)
+source=("https://files.pythonhosted.org/packages/source/${pkgname::1}/${pkgname}/${pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP')  # Update this with the actual checksum after first build
+
+build() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "${srcdir}/${pkgname}-${pkgver}"
+    python -m installer --destdir="${pkgdir}" dist/*.whl
+
+    # Install license
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+
+    # Install documentation
+    install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}
