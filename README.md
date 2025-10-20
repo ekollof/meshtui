@@ -1,6 +1,3 @@
-<edit_description>
-Create README.md for the meshtui project
-</edit_description>
 # MeshTUI
 
 MeshTUI: A Textual TUI interface to MeshCore companion radios
