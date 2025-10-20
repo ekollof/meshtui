@@ -8,8 +8,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
-from enum import Enum
+from typing import Optional, List, Dict, Any
 
 import serial.tools.list_ports
 from bleak import BleakScanner
@@ -23,22 +22,22 @@ from .transport import SerialTransport, BLETransport, TCPTransport, ConnectionTy
 
 class MeshConnection:
     """Manages connection to MeshCore devices and orchestrates domain managers.
-    
+
     Architecture:
     - Transport Layer: SerialTransport, BLETransport, TCPTransport (low-level connection)
     - Manager Layer: ContactManager, ChannelManager, RoomManager (domain logic)
     - Database Layer: MessageDatabase (persistence)
     - Connection Layer (this class): Orchestrates managers, handles events, stores messages
-    
+
     Responsibilities:
     - Connection lifecycle (connect, disconnect, reconnect)
     - Event handling and routing to managers
     - Message persistence (sends via managers, stores in DB)
     - Provides unified API for UI layer
-    
+
     Delegates domain logic to:
     - ContactManager: contact refresh, direct messaging
-    - ChannelManager: channel discovery, channel messaging  
+    - ChannelManager: channel discovery, channel messaging
     - RoomManager: room authentication, room messaging
     """
 
@@ -49,30 +48,36 @@ class MeshConnection:
         self.device_info: Optional[Dict[str, Any]] = None
         self.messages: List[Dict[str, Any]] = []  # In-memory cache for quick access
         self.logger = logging.getLogger("meshtui.connection")
-        
+
         # Enable DEBUG logging for meshcore to see raw packets
         meshcore_logger = logging.getLogger("meshcore")
         meshcore_logger.setLevel(logging.DEBUG)
-        self.logger.info("🔍 Enabled DEBUG logging for meshcore library (raw packet logging)")
-        
+        self.logger.info(
+            "🔍 Enabled DEBUG logging for meshcore library (raw packet logging)"
+        )
+
         # Managers (will be initialized after connection)
         self.contacts: Optional[ContactManager] = None
         self.channels: Optional[ChannelManager] = None
         self.rooms: Optional[RoomManager] = None
-        
+
         # Flags to prevent spam
         self._refreshing_contacts = False
-        
+
         # Callbacks for UI updates
         self._message_callback = None
         self._contacts_callback = None
-        
+
         # ACK tracking for sent messages
-        self._pending_acks: Dict[str, Dict[str, Any]] = {}  # ack_code -> {timestamp, repeats, message_preview}
-        
+        self._pending_acks: Dict[str, Dict[str, Any]] = (
+            {}
+        )  # ack_code -> {timestamp, repeats, message_preview}
+
         # Unread message tracking
         self.unread_counts: Dict[str, int] = {}  # contact_name -> unread count
-        self.last_read_index: Dict[str, int] = {}  # contact_name -> last read message index
+        self.last_read_index: Dict[str, int] = (
+            {}
+        )  # contact_name -> last read message index
         self._messages_dirty = False  # Track if messages need saving
         self._save_task = None  # Background save task
 
@@ -82,11 +87,12 @@ class MeshConnection:
 
         # Database for persistent storage (will be initialized per-device after connection)
         from .database import MessageDatabase
+
         self.db: Optional[MessageDatabase] = None
         self._db_initialized = False
 
         self.address_file = self.config_dir / "default_address"
-        
+
         # Transport layers
         self.serial_transport = SerialTransport()
         self.ble_transport = BLETransport(self.config_dir)
@@ -114,7 +120,9 @@ class MeshConnection:
                         {
                             "name": device.name,
                             "address": device.address,
-                            "rssi": advertisement_data.rssi if advertisement_data else None,
+                            "rssi": (
+                                advertisement_data.rssi if advertisement_data else None
+                            ),
                             "device": device,
                         }
                     )
@@ -126,7 +134,9 @@ class MeshConnection:
             self.logger.error(f"BLE scan failed: {e}")
             return []
 
-    async def scan_serial_devices(self, quick_scan: bool = False) -> List[Dict[str, Any]]:
+    async def scan_serial_devices(
+        self, quick_scan: bool = False
+    ) -> List[Dict[str, Any]]:
         """Scan for available serial devices and identify MeshCore devices.
 
         Args:
@@ -147,7 +157,11 @@ class MeshConnection:
             for port in ports:
                 device_path = port.device.lower()
                 # USB serial devices are most likely to be MeshCore
-                if 'usb' in device_path or 'acm' in device_path or 'tty.usb' in device_path:
+                if (
+                    "usb" in device_path
+                    or "acm" in device_path
+                    or "tty.usb" in device_path
+                ):
                     priority_ports.append(port)
                 else:
                     other_ports.append(port)
@@ -155,11 +169,11 @@ class MeshConnection:
             # Sort priority ports - prefer ttyUSB0, then ttyUSB*, then ttyACM*
             def sort_key(port):
                 device = port.device.lower()
-                if 'ttyusb0' in device:
+                if "ttyusb0" in device:
                     return 0
-                elif 'ttyusb' in device:
+                elif "ttyusb" in device:
                     return 1
-                elif 'ttyacm' in device:
+                elif "ttyacm" in device:
                     return 2
                 else:
                     return 3
@@ -167,9 +181,13 @@ class MeshConnection:
             priority_ports.sort(key=sort_key)
 
             # In quick scan mode, only check priority ports
-            ports_to_check = priority_ports if quick_scan else priority_ports + other_ports
+            ports_to_check = (
+                priority_ports if quick_scan else priority_ports + other_ports
+            )
 
-            self.logger.info(f"Found {len(ports)} serial ports, checking {len(ports_to_check)} ports...")
+            self.logger.info(
+                f"Found {len(ports)} serial ports, checking {len(ports_to_check)} ports..."
+            )
 
             for port in ports_to_check:
                 device_info = {
@@ -188,7 +206,9 @@ class MeshConnection:
                     serial_devices.append(device_info)
                     if quick_scan:
                         # In quick scan, return as soon as we find one
-                        self.logger.info("Quick scan found MeshCore device, stopping search")
+                        self.logger.info(
+                            "Quick scan found MeshCore device, stopping search"
+                        )
                         break
                 else:
                     device_info["is_meshcore"] = False
@@ -207,16 +227,20 @@ class MeshConnection:
             return []
 
     async def connect_ble(
-        self, address: Optional[str] = None, device=None, pin: Optional[str] = None, timeout: float = 2.0
+        self,
+        address: Optional[str] = None,
+        device=None,
+        pin: Optional[str] = None,
+        timeout: float = 2.0,
     ) -> bool:
         """Connect to a MeshCore device via BLE.
-        
+
         Args:
             address: BLE address to connect to
             device: BLE device object (alternative to address)
             pin: PIN for BLE pairing authentication (usually shown on device screen)
             timeout: Scan timeout if no address provided
-            
+
         Returns:
             True if connected successfully
         """
@@ -237,14 +261,21 @@ class MeshConnection:
                         self.logger.error("No MeshCore devices found")
                         return False
 
-            self.logger.info(f"Connecting to BLE device: {address}" + (" with PIN" if pin else ""))
+            self.logger.info(
+                f"Connecting to BLE device: {address}" + (" with PIN" if pin else "")
+            )
             try:
                 self.meshcore = await MeshCore.create_ble(
-                    address=address, device=device, pin=pin, debug=False, only_error=False
+                    address=address,
+                    device=device,
+                    pin=pin,
+                    debug=False,
+                    only_error=False,
                 )
             except Exception as e:
                 self.logger.error(f"BLE connection failed during initialization: {e}")
                 import traceback
+
                 self.logger.debug(f"BLE connection traceback: {traceback.format_exc()}")
                 return False
 
@@ -276,7 +307,9 @@ class MeshConnection:
             await self.refresh_contacts()
 
             contact_count = len(self.contacts.get_all()) if self.contacts else 0
-            self.logger.info(f"Connected to {self.device_info.get('name', 'Unknown')} via BLE. Found {contact_count} contacts.")
+            self.logger.info(
+                f"Connected to {self.device_info.get('name', 'Unknown')} via BLE. Found {contact_count} contacts."
+            )
             return True
 
         except Exception as e:
@@ -316,7 +349,9 @@ class MeshConnection:
             self.logger.error(f"TCP connection failed: {e}")
             return False
 
-    async def connect_serial(self, port: str, baudrate: int = 115200, verify_meshcore: bool = True) -> bool:
+    async def connect_serial(
+        self, port: str, baudrate: int = 115200, verify_meshcore: bool = True
+    ) -> bool:
         """Connect to a MeshCore device via serial.
 
         Args:
@@ -394,6 +429,7 @@ class MeshConnection:
         except Exception as e:
             self.logger.error(f"Serial connection failed: {e}")
             import traceback
+
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
             if self.meshcore:
                 try:
@@ -415,9 +451,9 @@ class MeshConnection:
         try:
             # Get device public key from self_info
             device_pubkey = None
-            if self.meshcore and hasattr(self.meshcore, 'self_info'):
+            if self.meshcore and hasattr(self.meshcore, "self_info"):
                 self_info = self.meshcore.self_info
-                device_pubkey = self_info.get('public_key')
+                device_pubkey = self_info.get("public_key")
 
             # Create devices directory
             devices_dir = self.config_dir / "devices"
@@ -430,11 +466,14 @@ class MeshConnection:
                 self.logger.info(f"Using device-specific database: {db_path.name}")
             else:
                 # Fallback: use temporary database if pubkey not available
-                self.logger.warning("Device public key not available, using temporary database")
+                self.logger.warning(
+                    "Device public key not available, using temporary database"
+                )
                 db_path = self.config_dir / "meshtui-temp.db"
 
             # Initialize database for this device
             from .database import MessageDatabase
+
             self.db = MessageDatabase(db_path)
             self._db_initialized = True
 
@@ -448,6 +487,7 @@ class MeshConnection:
             # Fallback to legacy database
             self.logger.info("Falling back to legacy database")
             from .database import MessageDatabase
+
             self.db = MessageDatabase(self.config_dir / "meshtui.db")
             self._db_initialized = True
 
@@ -473,7 +513,9 @@ class MeshConnection:
             self.meshcore.auto_update_contacts = True
             self.logger.debug("Auto-update contacts enabled")
         except Exception:
-            self.logger.debug("auto_update_contacts not available on this MeshCore instance")
+            self.logger.debug(
+                "auto_update_contacts not available on this MeshCore instance"
+            )
 
         # Start auto message fetching if the API supports it (guarded)
         try:
@@ -489,8 +531,12 @@ class MeshConnection:
         # Subscribe to events - meshcore handles async callbacks properly
         self.meshcore.subscribe(EventType.NEW_CONTACT, self._handle_new_contact)
         self.meshcore.subscribe(EventType.CONTACTS, self._handle_contacts_update)
-        self.meshcore.subscribe(EventType.CONTACT_MSG_RECV, self._handle_contact_message)
-        self.meshcore.subscribe(EventType.CHANNEL_MSG_RECV, self._handle_channel_message)
+        self.meshcore.subscribe(
+            EventType.CONTACT_MSG_RECV, self._handle_contact_message
+        )
+        self.meshcore.subscribe(
+            EventType.CHANNEL_MSG_RECV, self._handle_channel_message
+        )
         self.meshcore.subscribe(EventType.ADVERTISEMENT, self._handle_advertisement)
         self.meshcore.subscribe(EventType.PATH_UPDATE, self._handle_path_update)
         self.meshcore.subscribe(EventType.CHANNEL_INFO, self._handle_channel_info)
@@ -500,43 +546,51 @@ class MeshConnection:
     async def _handle_new_contact(self, event):
         """Handle new contact event - store immediately."""
         self.logger.info(f"📡 EVENT: New contact detected: {event.payload}")
-        
+
         # Store new contact immediately
         contact_data = event.payload or {}
-        if self.db and (contact_data.get('public_key') or contact_data.get('pubkey')):
+        if self.db and (contact_data.get("public_key") or contact_data.get("pubkey")):
             self.db.store_contact(contact_data, is_me=False)
-            self.logger.info(f"Stored new contact: {contact_data.get('name', 'Unknown')}")
-        
+            self.logger.info(
+                f"Stored new contact: {contact_data.get('name', 'Unknown')}"
+            )
+
         # Update contacts list
         await self.refresh_contacts()
 
     async def _handle_advertisement(self, event):
         """Handle advertisement event - update contact when they broadcast."""
         self.logger.info(f"📡 EVENT: Advertisement received: {event.payload}")
-        
+
         # Extract contact info from advertisement
         adv_data = event.payload or {}
-        pubkey = adv_data.get('pubkey') or adv_data.get('public_key')
-        
+        pubkey = adv_data.get("pubkey") or adv_data.get("public_key")
+
         if pubkey and self.contacts:
             # Try to find this contact
             contact = self.contacts.get_by_key(pubkey)
             if self.db and contact:
                 # Update their last_seen timestamp
                 self.db.store_contact(contact, is_me=False)
-                self.logger.debug(f"Updated contact {contact.get('name')} from advertisement")
+                self.logger.debug(
+                    f"Updated contact {contact.get('name')} from advertisement"
+                )
             elif self.db:
                 # New contact from advertisement - create minimal contact record
                 contact_data = {
-                    'public_key': pubkey,
-                    'pubkey': pubkey,
-                    'name': adv_data.get('name', pubkey[:12]),
-                    'adv_name': adv_data.get('adv_name', adv_data.get('name', pubkey[:12])),
-                    'type': adv_data.get('type', 0),
+                    "public_key": pubkey,
+                    "pubkey": pubkey,
+                    "name": adv_data.get("name", pubkey[:12]),
+                    "adv_name": adv_data.get(
+                        "adv_name", adv_data.get("name", pubkey[:12])
+                    ),
+                    "type": adv_data.get("type", 0),
                 }
                 self.db.store_contact(contact_data, is_me=False)
-                self.logger.info(f"Created new contact from advertisement: {contact_data.get('name')}")
-                
+                self.logger.info(
+                    f"Created new contact from advertisement: {contact_data.get('name')}"
+                )
+
                 # Trigger contacts refresh to update UI (with small delay to avoid overwhelming device)
                 await asyncio.sleep(0.5)
                 await self.refresh_contacts()
@@ -551,63 +605,69 @@ class MeshConnection:
         if self._refreshing_contacts:
             self.logger.debug("Skipping contacts update event (already refreshing)")
             return
-            
-        self.logger.info(f"📡 EVENT: Contacts update received")
+
+        self.logger.info("📡 EVENT: Contacts update received")
         # Refresh contacts through the manager
         await self.refresh_contacts()
 
     async def _handle_contact_message(self, event):
         """Handle direct contact message received event."""
         self.logger.info(f"📧 EVENT: Direct message received: {event.payload}")
-        
+
         # Store message in the messages list
         msg_data = event.payload or {}
-        sender_key = msg_data.get('pubkey_prefix', msg_data.get('sender', 'Unknown'))
-        
+        sender_key = msg_data.get("pubkey_prefix", msg_data.get("sender", "Unknown"))
+
         # Try to identify if this is from a room server
         sender_name = sender_key
         is_room_message = False
         actual_sender_name = None
-        signature = msg_data.get('signature', '')
-        
+        signature = msg_data.get("signature", "")
+
         if self.rooms:
             room_name = self.rooms.get_room_by_pubkey(sender_key)
             if room_name:
                 sender_name = room_name
                 is_room_message = True
                 self.logger.debug(f"Message identified as from room: {room_name}")
-                
+
                 # For room messages, try to identify the actual sender from signature
                 if signature and self.contacts:
                     actual_sender = self.contacts.get_by_key(signature)
                     if actual_sender:
-                        actual_sender_name = actual_sender.get('adv_name') or actual_sender.get('name', signature)
+                        actual_sender_name = actual_sender.get(
+                            "adv_name"
+                        ) or actual_sender.get("name", signature)
                         self.logger.debug(f"Room message sender: {actual_sender_name}")
                     else:
                         actual_sender_name = signature
                         self.logger.debug(f"Room message sender (unknown): {signature}")
-        
+
         # If not a room, try to find contact name
         if not is_room_message and self.contacts:
             contact = self.contacts.get_by_key(sender_key)
             if contact:
-                sender_name = contact.get('adv_name') or contact.get('name', sender_key)
-        
-        self.messages.append({
-            'type': 'room' if is_room_message else 'contact',
-            'sender': sender_name,
-            'sender_pubkey': sender_key,
-            'actual_sender': actual_sender_name,  # For room messages, this is the real sender
-            'actual_sender_pubkey': signature if is_room_message else None,
-            'text': msg_data.get('text', ''),
-            'timestamp': msg_data.get('timestamp', msg_data.get('sender_timestamp', 0)),
-            'channel': None,
-            'snr': msg_data.get('SNR'),
-            'path_len': msg_data.get('path_len'),
-            'txt_type': msg_data.get('txt_type'),
-            'signature': signature,
-        })
-        
+                sender_name = contact.get("adv_name") or contact.get("name", sender_key)
+
+        self.messages.append(
+            {
+                "type": "room" if is_room_message else "contact",
+                "sender": sender_name,
+                "sender_pubkey": sender_key,
+                "actual_sender": actual_sender_name,  # For room messages, this is the real sender
+                "actual_sender_pubkey": signature if is_room_message else None,
+                "text": msg_data.get("text", ""),
+                "timestamp": msg_data.get(
+                    "timestamp", msg_data.get("sender_timestamp", 0)
+                ),
+                "channel": None,
+                "snr": msg_data.get("SNR"),
+                "path_len": msg_data.get("path_len"),
+                "txt_type": msg_data.get("txt_type"),
+                "signature": signature,
+            }
+        )
+
         # Store in database
         if self.db:
             self.db.store_message(self.messages[-1])
@@ -617,73 +677,84 @@ class MeshConnection:
             contact = self.contacts.get_by_key(sender_key)
             if contact:
                 self.db.store_contact(contact, is_me=False)
-        
-        self.logger.info(f"Stored message from {sender_name}: {msg_data.get('text', '')[:50]}")
-        
+
+        self.logger.info(
+            f"Stored message from {sender_name}: {msg_data.get('text', '')[:50]}"
+        )
+
         # Trigger callback for UI notification
-        txt_type = msg_data.get('txt_type', 0)
+        txt_type = msg_data.get("txt_type", 0)
         if self._message_callback:
             try:
-                msg_type = 'room' if is_room_message else 'contact'
-                self.logger.info(f"🔔 Triggering message callback: sender={sender_name}, msg_type={msg_type}, text={msg_data.get('text', '')[:50]}")
+                msg_type = "room" if is_room_message else "contact"
+                self.logger.info(
+                    f"🔔 Triggering message callback: sender={sender_name}, msg_type={msg_type}, text={msg_data.get('text', '')[:50]}"
+                )
                 self._message_callback(
                     sender=sender_name,
-                    text=msg_data.get('text', ''),
+                    text=msg_data.get("text", ""),
                     msg_type=msg_type,
-                    txt_type=txt_type  # Pass txt_type so UI can route command responses
+                    txt_type=txt_type,  # Pass txt_type so UI can route command responses
                 )
             except Exception as e:
                 self.logger.error(f"Error in message callback: {e}")
                 import traceback
+
                 self.logger.error(f"Callback traceback: {traceback.format_exc()}")
 
     async def _handle_channel_message(self, event):
         """Handle channel message received event."""
         self.logger.info(f"📢 EVENT: Channel message received: {event.payload}")
-        
+
         # Store message in the messages list
         msg_data = event.payload or {}
-        sender_key = msg_data.get('pubkey_prefix', msg_data.get('sender', ''))
-        
+        sender_key = msg_data.get("pubkey_prefix", msg_data.get("sender", ""))
+
         # Channel messages have sender name embedded in text like "SenderName: message"
-        text = msg_data.get('text', '')
-        sender_name = 'Unknown'
-        
+        text = msg_data.get("text", "")
+        sender_name = "Unknown"
+
         # Try to extract sender from text prefix
-        if ': ' in text:
-            potential_sender, message_text = text.split(': ', 1)
+        if ": " in text:
+            potential_sender, message_text = text.split(": ", 1)
             # Verify this looks like a sender name (not part of the message)
-            if len(potential_sender) < 50 and not potential_sender.startswith(' '):
+            if len(potential_sender) < 50 and not potential_sender.startswith(" "):
                 sender_name = potential_sender
                 text = message_text  # Use message without sender prefix
-        
+
         # Try to find contact by name or key
         if self.contacts:
             if sender_key:
                 contact = self.contacts.get_by_key(sender_key)
                 if contact:
-                    sender_name = contact.get('adv_name') or contact.get('name', sender_name)
+                    sender_name = contact.get("adv_name") or contact.get(
+                        "name", sender_name
+                    )
             else:
                 # Try to find by name we extracted
                 contact = self.contacts.get_by_name(sender_name)
                 if contact:
-                    sender_key = contact.get('public_key') or contact.get('pubkey', '')
-        
-        channel_idx = msg_data.get('channel_idx', msg_data.get('channel', 0))
+                    sender_key = contact.get("public_key") or contact.get("pubkey", "")
+
+        channel_idx = msg_data.get("channel_idx", msg_data.get("channel", 0))
         channel_name = f"Channel {channel_idx}" if channel_idx != 0 else "Public"
-        
-        self.messages.append({
-            'type': 'channel',
-            'sender': sender_name,
-            'sender_pubkey': sender_key,
-            'text': text,
-            'timestamp': msg_data.get('sender_timestamp', msg_data.get('timestamp', 0)),
-            'channel': channel_idx,
-            'snr': msg_data.get('SNR'),
-            'path_len': msg_data.get('path_len'),
-            'txt_type': msg_data.get('txt_type'),
-        })
-        
+
+        self.messages.append(
+            {
+                "type": "channel",
+                "sender": sender_name,
+                "sender_pubkey": sender_key,
+                "text": text,
+                "timestamp": msg_data.get(
+                    "sender_timestamp", msg_data.get("timestamp", 0)
+                ),
+                "channel": channel_idx,
+                "snr": msg_data.get("SNR"),
+                "path_len": msg_data.get("path_len"),
+                "txt_type": msg_data.get("txt_type"),
+            }
+        )
+
         # Store in database
         if self.db:
             self.db.store_message(self.messages[-1])
@@ -693,37 +764,43 @@ class MeshConnection:
             contact = self.contacts.get_by_key(sender_key)
             if contact:
                 self.db.store_contact(contact, is_me=False)
-        elif self.db and self.contacts and sender_name != 'Unknown':
+        elif self.db and self.contacts and sender_name != "Unknown":
             contact = self.contacts.get_by_name(sender_name)
             if contact:
                 self.db.store_contact(contact, is_me=False)
-        
-        self.logger.info(f"Stored channel message from {sender_name} on channel {channel_idx}")
-        
+
+        self.logger.info(
+            f"Stored channel message from {sender_name} on channel {channel_idx}"
+        )
+
         # Trigger callback for UI notification
         if self._message_callback:
             try:
-                channel_name = f"Channel {channel_idx}" if channel_idx != 0 else "Public"
-                self._message_callback(sender_name, msg_data.get('text', ''), 'channel', channel_name)
+                channel_name = (
+                    f"Channel {channel_idx}" if channel_idx != 0 else "Public"
+                )
+                self._message_callback(
+                    sender_name, msg_data.get("text", ""), "channel", channel_name
+                )
             except Exception as e:
                 self.logger.error(f"Error in message callback: {e}")
 
     async def _handle_channel_info(self, event):
         """Handle channel information event."""
         self.logger.info(f"📻 EVENT: Channel info: {event.payload}")
-        
+
         # Store channel info
-        if not hasattr(self, 'channel_info_list'):
+        if not hasattr(self, "channel_info_list"):
             self.channel_info_list = []
-        
+
         # Add or update channel info
         channel_data = event.payload
         if channel_data:
             # Update existing or append new
-            channel_idx = channel_data.get('channel_idx')
+            channel_idx = channel_data.get("channel_idx")
             found = False
             for i, ch in enumerate(self.channel_info_list):
-                if ch.get('channel_idx') == channel_idx:
+                if ch.get("channel_idx") == channel_idx:
                     self.channel_info_list[i] = channel_data
                     found = True
                     break
@@ -733,27 +810,31 @@ class MeshConnection:
     async def _handle_ack(self, event):
         """Handle ACK event - message was repeated by a repeater."""
         self.logger.info(f"📡 EVENT: ACK received: {event.payload}")
-        
+
         # Extract ACK code
-        ack_code = event.payload.get('code', '')
-        
+        ack_code = event.payload.get("code", "")
+
         # Check if this is a tracked message
         if ack_code in self._pending_acks:
             ack_info = self._pending_acks[ack_code]
-            ack_info['repeats'] += 1
-            repeats = ack_info['repeats']
-            
+            ack_info["repeats"] += 1
+            repeats = ack_info["repeats"]
+
             # Update database with delivery status
             if self.db:
                 self.db.update_message_delivery_status(ack_code, repeats)
-            
+
             # Show updated status
             if self._message_callback:
                 try:
                     if repeats == 1:
-                        self._message_callback("System", f"✓ Heard {repeats} repeat", "status")
+                        self._message_callback(
+                            "System", f"✓ Heard {repeats} repeat", "status"
+                        )
                     else:
-                        self._message_callback("System", f"✓ Heard {repeats} repeats", "status")
+                        self._message_callback(
+                            "System", f"✓ Heard {repeats} repeats", "status"
+                        )
                 except Exception as e:
                     self.logger.error(f"Error in ACK callback: {e}")
         else:
@@ -763,33 +844,40 @@ class MeshConnection:
     async def _check_message_timeout(self, ack_code: str, timeout_seconds: int):
         """Check if a message failed to be delivered after timeout."""
         await asyncio.sleep(timeout_seconds)
-        
+
         # Check if message is still pending (no ACKs received)
         if ack_code in self._pending_acks:
             ack_info = self._pending_acks[ack_code]
-            
+
             # If no repeats received, message likely failed
-            if ack_info['repeats'] == 0 and not ack_info.get('failed'):
-                ack_info['failed'] = True
-                
+            if ack_info["repeats"] == 0 and not ack_info.get("failed"):
+                ack_info["failed"] = True
+
                 # Update database to mark as failed
                 if self.db:
                     try:
                         cursor = self.db.conn.cursor()
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             UPDATE messages 
                             SET delivery_status = 'failed'
                             WHERE ack_code = ?
-                        """, (ack_code,))
+                        """,
+                            (ack_code,),
+                        )
                         self.db.conn.commit()
                     except Exception as e:
                         self.logger.error(f"Failed to update message status: {e}")
-                
+
                 # Show failure notification
                 if self._message_callback:
-                    self._message_callback("System", "✗ Delivery failed (no repeaters)", "status")
-                
-                self.logger.warning(f"Message delivery failed: {ack_info['message_preview']}")
+                    self._message_callback(
+                        "System", "✗ Delivery failed (no repeaters)", "status"
+                    )
+
+                self.logger.warning(
+                    f"Message delivery failed: {ack_info['message_preview']}"
+                )
 
     async def refresh_contacts(self):
         """Refresh the contacts list."""
@@ -801,22 +889,22 @@ class MeshConnection:
         if self._refreshing_contacts:
             self.logger.debug("Already refreshing contacts, skipping")
             return
-            
+
         self._refreshing_contacts = True
         try:
             self.logger.debug("Refreshing contacts via ContactManager...")
-            
+
             # Delegate to ContactManager
             if self.contacts:
                 await self.contacts.refresh()
                 contact_list = self.contacts.get_all()
                 self.logger.info(f"Successfully refreshed {len(contact_list)} contacts")
-                
+
                 # Store contacts in database
                 if self.db:
                     for contact in contact_list:
                         self.db.store_contact(contact)
-                
+
                 if contact_list:
                     self.logger.debug(
                         f"Contact names: {[c.get('name', 'Unknown') for c in contact_list]}"
@@ -826,7 +914,7 @@ class MeshConnection:
                     )
             else:
                 self.logger.error("ContactManager not initialized")
-                
+
         except asyncio.TimeoutError:
             self.logger.error("Timeout refreshing contacts")
         except Exception as e:
@@ -836,7 +924,7 @@ class MeshConnection:
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
         finally:
             self._refreshing_contacts = False
-            
+
             # Notify UI that contacts were updated
             if self._contacts_callback:
                 try:
@@ -844,15 +932,17 @@ class MeshConnection:
                 except Exception as e:
                     self.logger.error(f"Error in contacts callback: {e}")
 
-    async def send_message(self, recipient_name: str, message: str) -> Optional[Dict[str, Any]]:
+    async def send_message(
+        self, recipient_name: str, message: str
+    ) -> Optional[Dict[str, Any]]:
         """Send a direct message to a contact.
-        
+
         Routes through ContactManager for consistency, then stores in database.
-        
+
         Args:
             recipient_name: The display name of the contact
             message: The message text to send
-            
+
         Returns:
             Dict with status info if successful, None if failed
         """
@@ -861,57 +951,67 @@ class MeshConnection:
 
         try:
             import time
-            
+
             # Use ContactManager to send the message
             status_info = await self.contacts.send_message(recipient_name, message)
-            
+
             if not status_info:
                 return None
-            
+
             # Track the ACK code if available
             ack_code_hex = None
-            suggested_timeout = status_info.get('result', {}).get('suggested_timeout', 30)
-            if status_info.get('expected_ack'):
-                ack_code_hex = status_info['expected_ack'].hex()
+            suggested_timeout = status_info.get("result", {}).get(
+                "suggested_timeout", 30
+            )
+            if status_info.get("expected_ack"):
+                ack_code_hex = status_info["expected_ack"].hex()
                 self._pending_acks[ack_code_hex] = {
-                    'timestamp': time.time(),
-                    'repeats': 0,
-                    'message_preview': message[:30],
-                    'recipient': recipient_name,
-                    'timeout': suggested_timeout,
-                    'failed': False
+                    "timestamp": time.time(),
+                    "repeats": 0,
+                    "message_preview": message[:30],
+                    "recipient": recipient_name,
+                    "timeout": suggested_timeout,
+                    "failed": False,
                 }
-                self.logger.debug(f"Tracking ACK for message: {ack_code_hex} (timeout: {suggested_timeout}s)")
-                
+                self.logger.debug(
+                    f"Tracking ACK for message: {ack_code_hex} (timeout: {suggested_timeout}s)"
+                )
+
                 # Show "Sent" notification
                 if self._message_callback:
                     self._message_callback("System", "✓ Sent", "status")
-                
+
                 # Schedule timeout check
-                asyncio.create_task(self._check_message_timeout(ack_code_hex, suggested_timeout))
-            
+                asyncio.create_task(
+                    self._check_message_timeout(ack_code_hex, suggested_timeout)
+                )
+
             # Look up contact to get pubkey for storage
             contact = self.contacts.get_by_name(recipient_name)
-            recipient_pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id") if contact else ""
+            recipient_pubkey = (
+                contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+                if contact
+                else ""
+            )
 
             # Determine message type based on recipient type
-            is_room = contact and contact.get('type') == 3  # Type 3 = Room Server
-            msg_type = 'room' if is_room else 'contact'
+            is_room = contact and contact.get("type") == 3  # Type 3 = Room Server
+            msg_type = "room" if is_room else "contact"
 
             # Store sent message in database with ACK code for tracking
             sent_msg = {
-                'type': msg_type,
-                'sender': 'Me',
-                'sender_pubkey': '',
-                'recipient': recipient_name,
-                'recipient_pubkey': recipient_pubkey,
-                'text': message,
-                'timestamp': int(time.time()),
-                'channel': None,
-                'sent': True,
-                'ack_code': ack_code_hex,
-                'delivery_status': 'sent',
-                'repeat_count': 0,
+                "type": msg_type,
+                "sender": "Me",
+                "sender_pubkey": "",
+                "recipient": recipient_name,
+                "recipient_pubkey": recipient_pubkey,
+                "text": message,
+                "timestamp": int(time.time()),
+                "channel": None,
+                "sent": True,
+                "ack_code": ack_code_hex,
+                "delivery_status": "sent",
+                "repeat_count": 0,
             }
             self.messages.append(sent_msg)
             if self.db:
@@ -921,19 +1021,20 @@ class MeshConnection:
 
             self.logger.info(f"Sent and stored {msg_type} message to {recipient_name}")
             return status_info
-            
+
         except Exception as e:
             self.logger.error(f"Error sending message: {e}")
             import traceback
+
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return None
 
     async def send_advertisement(self, hops: int = 3) -> bool:
         """Send an advertisement packet to announce presence.
-        
+
         Args:
             hops: Number of hops (0 = direct neighbors only, 3 = flood entire network)
-            
+
         Returns:
             True if successful
         """
@@ -946,17 +1047,18 @@ class MeshConnection:
             flood = hops > 0
             self.logger.info(f"Sending advertisement (flood={flood}, hops={hops})")
             result = await self.meshcore.commands.send_advert(flood)
-            
+
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to send advertisement: {result}")
                 return False
-            
+
             self.logger.info(f"Advertisement sent successfully (flood={flood})")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error sending advertisement: {e}")
             import traceback
+
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return False
 
@@ -981,11 +1083,13 @@ class MeshConnection:
             True if login successful, False otherwise
         """
         try:
-            node_name = contact.get('adv_name') or contact.get('name', 'Unknown')
+            node_name = contact.get("adv_name") or contact.get("name", "Unknown")
             result = await self.meshcore.commands.send_login(contact, password)
 
             if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to login to repeater '{node_name}': {result}")
+                self.logger.error(
+                    f"Failed to login to repeater '{node_name}': {result}"
+                )
                 return False
 
             self.logger.info(f"Successfully logged into repeater '{node_name}'")
@@ -1069,11 +1173,13 @@ class MeshConnection:
             True if logout successful, False otherwise
         """
         try:
-            node_name = contact.get('adv_name') or contact.get('name', 'Unknown')
+            node_name = contact.get("adv_name") or contact.get("name", "Unknown")
             result = await self.meshcore.commands.send_logout(contact)
 
             if result.type == EventType.ERROR:
-                self.logger.error(f"Failed to logout from repeater '{node_name}': {result}")
+                self.logger.error(
+                    f"Failed to logout from repeater '{node_name}': {result}"
+                )
                 return False
 
             self.logger.info(f"Successfully logged out from repeater '{node_name}'")
@@ -1085,52 +1191,62 @@ class MeshConnection:
 
     async def _fetch_room_messages(self, room_key: str) -> None:
         """Fetch queued messages from a room server after login.
-        
+
         Args:
             room_key: Public key of the room server
         """
         if not self.meshcore:
             return
-        
+
         try:
             # Keep fetching messages until we get NO_MORE_MSGS
             message_count = 0
             max_messages = 100  # Safety limit
-            
+
             while message_count < max_messages:
                 # Get next message with timeout
                 result = await asyncio.wait_for(
-                    self.meshcore.commands.get_msg(),
-                    timeout=3.0
+                    self.meshcore.commands.get_msg(), timeout=3.0
                 )
-                
+
                 if result.type == EventType.NO_MORE_MSGS:
-                    self.logger.info(f"Retrieved {message_count} queued messages from room")
+                    self.logger.info(
+                        f"Retrieved {message_count} queued messages from room"
+                    )
                     break
                 elif result.type == EventType.CONTACT_MSG_RECV:
                     # Got a message - store it
                     msg_data = result.payload
-                    self.messages.append({
-                        'type': 'contact',
-                        'sender': msg_data.get('pubkey_prefix', 'Unknown'),
-                        'text': msg_data.get('text', ''),
-                        'timestamp': msg_data.get('timestamp', 0),
-                        'channel': None,
-                    })
+                    self.messages.append(
+                        {
+                            "type": "contact",
+                            "sender": msg_data.get("pubkey_prefix", "Unknown"),
+                            "text": msg_data.get("text", ""),
+                            "timestamp": msg_data.get("timestamp", 0),
+                            "channel": None,
+                        }
+                    )
                     message_count += 1
-                    self.logger.debug(f"Received room message {message_count}: {msg_data.get('text', '')[:50]}")
+                    self.logger.debug(
+                        f"Received room message {message_count}: {msg_data.get('text', '')[:50]}"
+                    )
                 elif result.type == EventType.ERROR:
                     self.logger.error(f"Error fetching room message: {result.payload}")
                     break
                 else:
                     # Got some other event, skip it
-                    self.logger.debug(f"Got unexpected event while fetching room messages: {result.type}")
-                    
+                    self.logger.debug(
+                        f"Got unexpected event while fetching room messages: {result.type}"
+                    )
+
         except asyncio.TimeoutError:
-            self.logger.info(f"Timeout fetching room messages after {message_count} messages")
+            self.logger.info(
+                f"Timeout fetching room messages after {message_count} messages"
+            )
         except Exception as e:
             self.logger.error(f"Error fetching room messages: {e}")
             import traceback
+
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
 
     # NOTE: Removed duplicate send_channel_message() - now using the one at end of file
@@ -1143,42 +1259,47 @@ class MeshConnection:
 
         try:
             messages = []
-            
+
             # Get messages from event storage first
-            if hasattr(self, 'received_messages'):
+            if hasattr(self, "received_messages"):
                 messages.extend(self.received_messages)
-                self.logger.debug(f"Found {len(self.received_messages)} messages from events")
-            
+                self.logger.debug(
+                    f"Found {len(self.received_messages)} messages from events"
+                )
+
             # Poll for additional messages that might not have triggered events
             max_poll_messages = 50
             message_count = 0
-            
+
             try:
                 while message_count < max_poll_messages:
                     msg_result = await asyncio.wait_for(
                         self.meshcore.commands.get_msg(), timeout=1.0
                     )
-                    if msg_result.type == EventType.ERROR or msg_result.type == EventType.NO_MORE_MSGS:
+                    if (
+                        msg_result.type == EventType.ERROR
+                        or msg_result.type == EventType.NO_MORE_MSGS
+                    ):
                         break
-                    
+
                     # Add timestamp and type info
                     message_data = {
-                        'type': 'polled',
-                        'timestamp': self.meshcore.time,
-                        **msg_result.payload
+                        "type": "polled",
+                        "timestamp": self.meshcore.time,
+                        **msg_result.payload,
                     }
                     messages.append(message_data)
                     self.logger.debug(f"Polled message: {msg_result.payload}")
                     message_count += 1
-                    
+
             except asyncio.TimeoutError:
                 self.logger.debug("Finished polling messages (timeout)")
             except Exception as e:
                 self.logger.debug(f"Finished polling messages: {e}")
 
             # Sort messages by timestamp if available
-            messages.sort(key=lambda x: x.get('timestamp', 0))
-            
+            messages.sort(key=lambda x: x.get("timestamp", 0))
+
             if len(messages) > 0:
                 self.logger.info(f"Retrieved {len(messages)} total messages")
             else:
@@ -1190,7 +1311,7 @@ class MeshConnection:
 
     def set_message_callback(self, callback):
         """Set callback for new message notifications.
-        
+
         Args:
             callback: Function to call when new message arrives.
                      Signature: callback(sender, text, msg_type, channel_name=None)
@@ -1199,7 +1320,7 @@ class MeshConnection:
 
     def set_contacts_callback(self, callback):
         """Set callback for contacts list updates.
-        
+
         Args:
             callback: Function to call when contacts list changes.
                      Signature: callback()
@@ -1208,7 +1329,7 @@ class MeshConnection:
 
     async def disconnect(self):
         """Disconnect from the device.
-        
+
         Note: You may see 'Task was destroyed but it is pending!' warnings
         from meshcore.events.EventDispatcher._process_events(). This is a
         known issue in the meshcore library and does not affect functionality.
@@ -1216,18 +1337,18 @@ class MeshConnection:
         if self.meshcore:
             try:
                 self.logger.info("Disconnecting from device...")
-                
+
                 # MeshCore's EventDispatcher will be cleaned up when the object is deleted
                 # Just clear our reference and let Python's garbage collector handle it
-                meshcore_instance = self.meshcore
+                old_meshcore = self.meshcore
                 self.meshcore = None
-                
+
                 # Give a moment for any pending events to complete
                 await asyncio.sleep(0.2)
-                
+
                 # Now delete the instance (may produce EventDispatcher warnings from meshcore)
-                del meshcore_instance
-                
+                del old_meshcore
+
             except Exception as e:
                 self.logger.error(f"Error during disconnect: {e}")
 
@@ -1249,22 +1370,22 @@ class MeshConnection:
 
     def get_contacts(self) -> List[Dict[str, Any]]:
         """Get current contacts list.
-        
-        Contacts returned from MeshCore are fresh by definition - 
+
+        Contacts returned from MeshCore are fresh by definition -
         if the device has them, they're active.
         """
         if not self.contacts:
             return []
-        
-        import time
+
+
         now = int(time.time())
-        
+
         contacts = self.contacts.get_all()
-        
+
         # Mark all contacts as fresh since MeshCore has them
         for contact in contacts:
-            contact['last_seen'] = now
-        
+            contact["last_seen"] = now
+
         return contacts
 
     def get_contact_by_name(self, name: str) -> Optional[Dict[str, Any]]:
@@ -1305,11 +1426,11 @@ class MeshConnection:
             # Try to extract channel index from name like "Channel 1"
             try:
                 channel_idx = int(channel_name.split()[-1])
-            except:
+            except (ValueError, IndexError):
                 channel_idx = 0
 
         return self.db.get_messages_for_channel(channel_idx, limit=1000)
-    
+
     def mark_as_read(self, contact_or_channel: str):
         """Mark all messages from a contact/channel as read.
 
@@ -1318,10 +1439,10 @@ class MeshConnection:
         """
         if not self.db:
             return
-        import time
+
         self.db.mark_as_read(contact_or_channel, int(time.time()))
         self.logger.debug(f"Marked {contact_or_channel} as read")
-    
+
     def get_unread_count(self, contact_or_channel: str) -> int:
         """Get the number of unread messages for a contact/channel.
 
@@ -1334,7 +1455,7 @@ class MeshConnection:
         if not self.db:
             return 0
         return self.db.get_unread_count(contact_or_channel)
-    
+
     def get_all_unread_counts(self) -> Dict[str, int]:
         """Get unread counts for all contacts/channels.
 
@@ -1344,7 +1465,7 @@ class MeshConnection:
         if not self.db:
             return {}
         return self.db.get_all_unread_counts()
-    
+
     def _load_recent_messages(self):
         """Load recent messages from database into memory cache."""
         if not self.db:
@@ -1354,14 +1475,16 @@ class MeshConnection:
         try:
             # Load recent conversations to initialize unread counts
             conversations = self.db.get_recent_conversations(limit=50)
-            self.logger.info(f"Loaded {len(conversations)} recent conversations from database")
+            self.logger.info(
+                f"Loaded {len(conversations)} recent conversations from database"
+            )
         except Exception as e:
             self.logger.error(f"Failed to load recent messages: {e}")
-    
+
     def _save_messages(self):
         """Legacy method - now using database directly."""
         pass  # Database saves in real-time
-    
+
     async def _periodic_save_messages(self):
         """Legacy method - no longer needed with database."""
         pass  # Database handles persistence
@@ -1369,16 +1492,20 @@ class MeshConnection:
     def is_connected(self) -> bool:
         """Check if connected to a device."""
         try:
-            return bool(self.connected and self.meshcore and getattr(self.meshcore, "is_connected", False))
+            return bool(
+                self.connected
+                and self.meshcore
+                and getattr(self.meshcore, "is_connected", False)
+            )
         except Exception:
             return bool(self.connected)
-    
+
     def is_room_admin(self, room_name: str) -> bool:
         """Check if we have admin privileges in a room.
-        
+
         Args:
             room_name: Name of the room server
-            
+
         Returns:
             True if we're logged in as admin, False otherwise
         """
@@ -1413,7 +1540,7 @@ class MeshConnection:
                 self.logger.error(f"Node '{node_name}' not found")
                 return False
 
-            node_type = contact.get('type', 0)
+            node_type = contact.get("type", 0)
 
             # Route to appropriate handler based on type
             if node_type == 3:
@@ -1423,7 +1550,9 @@ class MeshConnection:
                 # Repeater - use helper method
                 return await self._login_to_repeater(contact, password)
             else:
-                self.logger.error(f"Node '{node_name}' is not a repeater or room server (type={node_type})")
+                self.logger.error(
+                    f"Node '{node_name}' is not a repeater or room server (type={node_type})"
+                )
                 return False
 
         except Exception as e:
@@ -1456,7 +1585,7 @@ class MeshConnection:
                 self.logger.error(f"Node '{node_name}' not found")
                 return False
 
-            node_type = contact.get('type', 0)
+            node_type = contact.get("type", 0)
 
             # Route to appropriate handler based on type
             if node_type == 3:
@@ -1466,7 +1595,9 @@ class MeshConnection:
                 # Repeater - use helper method
                 return await self._logout_from_repeater(contact)
             else:
-                self.logger.error(f"Node '{node_name}' is not a repeater or room server (type={node_type})")
+                self.logger.error(
+                    f"Node '{node_name}' is not a repeater or room server (type={node_type})"
+                )
                 return False
 
         except Exception as e:
@@ -1475,10 +1606,10 @@ class MeshConnection:
 
     async def send_command_to_node(self, node_name: str, command: str) -> bool:
         """Send a command to a node (repeater, room server, or sensor).
-        
+
         Uses the correct MeshCore API: send_cmd(contact, command_text)
         Works for type 2 (repeater), 3 (room server), and 4 (sensor) nodes.
-        
+
         For room servers: You must be logged in with admin password first.
         The login happens in the Chat tab, and admin status is tracked by RoomManager.
         """
@@ -1491,39 +1622,47 @@ class MeshConnection:
             if not contact:
                 self.logger.error(f"Node '{node_name}' not found")
                 return False
-            
-            node_type = contact.get('type', 0)
+
+            node_type = contact.get("type", 0)
             if node_type not in [2, 3, 4]:  # repeater, room, or sensor
-                self.logger.error(f"Node '{node_name}' does not support commands (type={node_type})")
+                self.logger.error(
+                    f"Node '{node_name}' does not support commands (type={node_type})"
+                )
                 return False
-            
+
             # For room servers, check if we're logged in and have admin rights
             if node_type == 3:  # Room server
                 if not self.rooms or not self.rooms.is_logged_in(node_name):
-                    self.logger.error(f"Not logged into room '{node_name}'. Login via Chat tab first.")
+                    self.logger.error(
+                        f"Not logged into room '{node_name}'. Login via Chat tab first."
+                    )
                     return False
                 is_admin = self.rooms.is_admin(node_name)
-                self.logger.debug(f"🔍 Admin check for '{node_name}': is_admin={is_admin}, room_admin_status={self.rooms.room_admin_status}")
+                self.logger.debug(
+                    f"🔍 Admin check for '{node_name}': is_admin={is_admin}, room_admin_status={self.rooms.room_admin_status}"
+                )
                 if not is_admin:
-                    self.logger.warning(f"Not admin in room '{node_name}'. Admin commands may be rejected.")
+                    self.logger.warning(
+                        f"Not admin in room '{node_name}'. Admin commands may be rejected."
+                    )
                     # Don't return False - let the command through, server will reject if needed
-            
+
             # Use send_cmd API (correct API from meshcore-cli)
             result = await self.meshcore.commands.send_cmd(contact, command)
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to send command to {node_name}: {result}")
                 return False
-                
+
             self.logger.info(f"Command sent to {node_name}: {command}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error sending command to {node_name}: {e}")
             return False
 
     async def request_node_status(self, node_name: str) -> Optional[Dict[str, Any]]:
         """Request status from a node (repeater, room server, or sensor).
-        
+
         Works for type 2 (repeater), 3 (room server), and 4 (sensor) nodes.
         """
         if not self.meshcore or not self.contacts:
@@ -1535,20 +1674,22 @@ class MeshConnection:
             if not contact:
                 self.logger.error(f"Node '{node_name}' not found")
                 return None
-            
-            node_type = contact.get('type', 0)
+
+            node_type = contact.get("type", 0)
             if node_type not in [2, 3, 4]:
-                self.logger.error(f"Node '{node_name}' does not support status requests (type={node_type})")
+                self.logger.error(
+                    f"Node '{node_name}' does not support status requests (type={node_type})"
+                )
                 return None
-            
+
             result = await self.meshcore.commands.request_status(node_name)
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to get status from {node_name}: {result}")
                 return None
-                
+
             self.logger.info(f"Received status from {node_name}")
             return result.payload
-            
+
         except Exception as e:
             self.logger.error(f"Error requesting status from {node_name}: {e}")
             return None
@@ -1568,7 +1709,6 @@ class MeshConnection:
             - latency: float - round trip time in seconds (if successful)
             - error: str - error message (if failed)
         """
-        import time
 
         if not self.meshcore or not self.contacts:
             return {"success": False, "error": "Not connected"}
@@ -1577,9 +1717,14 @@ class MeshConnection:
             # Get contact
             contact = self.contacts.get_by_name(contact_name)
             if not contact:
-                return {"success": False, "error": f"Contact '{contact_name}' not found"}
+                return {
+                    "success": False,
+                    "error": f"Contact '{contact_name}' not found",
+                }
 
-            pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+            pubkey = (
+                contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+            )
             if not pubkey:
                 return {"success": False, "error": "Contact has no public key"}
 
@@ -1594,44 +1739,49 @@ class MeshConnection:
             if result.type == EventType.ERROR:
                 return {
                     "success": False,
-                    "error": f"Failed to send ping: {result.payload if hasattr(result, 'payload') else 'unknown error'}"
+                    "error": f"Failed to send ping: {result.payload if hasattr(result, 'payload') else 'unknown error'}",
                 }
 
             # Get the expected ACK code
             expected_ack = result.payload.get("expected_ack", b"").hex()
             suggested_timeout = result.payload.get("suggested_timeout", 5000) / 1000.0
 
-            self.logger.debug(f"Waiting for ACK {expected_ack}, suggested timeout: {suggested_timeout}s")
+            self.logger.debug(
+                f"Waiting for ACK {expected_ack}, suggested timeout: {suggested_timeout}s"
+            )
 
             # Wait for the ACK event
             try:
-                ack_event = await asyncio.wait_for(
+                await asyncio.wait_for(
                     self.meshcore.dispatcher.wait_for_event(
-                        EventType.ACK,
-                        attribute_filters={"code": expected_ack}
+                        EventType.ACK, attribute_filters={"code": expected_ack}
                     ),
-                    timeout=min(suggested_timeout * 1.5, 15.0)  # Use suggested timeout with margin
+                    timeout=min(
+                        suggested_timeout * 1.5, 15.0
+                    ),  # Use suggested timeout with margin
                 )
 
                 latency = time.time() - start_time
-                self.logger.info(f"✓ Ping successful to {contact_name}: {latency*1000:.0f}ms")
+                self.logger.info(
+                    f"✓ Ping successful to {contact_name}: {latency*1000:.0f}ms"
+                )
 
-                return {
-                    "success": True,
-                    "latency": latency
-                }
+                return {"success": True, "latency": latency}
 
             except asyncio.TimeoutError:
                 latency = time.time() - start_time
-                self.logger.warning(f"✗ Ping timeout to {contact_name} after {latency:.1f}s (no ACK received)")
+                self.logger.warning(
+                    f"✗ Ping timeout to {contact_name} after {latency:.1f}s (no ACK received)"
+                )
                 return {
                     "success": False,
-                    "error": f"Timeout after {latency:.1f}s - no ACK received (contact may be out of range or offline)"
+                    "error": f"Timeout after {latency:.1f}s - no ACK received (contact may be out of range or offline)",
                 }
 
         except Exception as e:
             self.logger.error(f"Error pinging {contact_name}: {e}")
             import traceback
+
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return {"success": False, "error": str(e)}
 
@@ -1648,7 +1798,9 @@ class MeshConnection:
         """Deprecated: Use send_command_to_node() instead."""
         return await self.send_command_to_node(repeater_name, command)
 
-    async def request_repeater_status(self, repeater_name: str) -> Optional[Dict[str, Any]]:
+    async def request_repeater_status(
+        self, repeater_name: str
+    ) -> Optional[Dict[str, Any]]:
         """Deprecated: Use request_node_status() instead."""
         return await self.request_node_status(repeater_name)
 
@@ -1700,111 +1852,121 @@ class MeshConnection:
 
     async def remove_contact(self, contact_name: str) -> bool:
         """Remove a contact from the device.
-        
+
         Args:
             contact_name: Name of the contact to remove
-            
+
         Returns:
             True if successful, False otherwise
         """
         if not self.meshcore or not self.contacts:
             self.logger.error("Cannot remove contact - not connected")
             return False
-        
+
         try:
             # Get contact to find pubkey
             contact = self.contacts.get_by_name(contact_name)
             if not contact:
                 self.logger.error(f"Contact '{contact_name}' not found")
                 return False
-            
-            pubkey = contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+
+            pubkey = (
+                contact.get("public_key") or contact.get("pubkey") or contact.get("id")
+            )
             if not pubkey:
                 self.logger.error(f"Contact '{contact_name}' has no public key")
                 return False
-            
+
             self.logger.info(f"Removing contact '{contact_name}' ({pubkey[:12]}...)")
-            
+
             # Remove from device
             result = await self.meshcore.commands.remove_contact(pubkey)
-            
+
             if result.type == EventType.OK:
                 self.logger.info(f"✓ Contact '{contact_name}' removed from device")
-                
+
                 # Remove from database if present
                 if self.db:
                     self.db.delete_contact(pubkey)
                     self.logger.debug(f"Removed '{contact_name}' from database")
-                
+
                 # Refresh contacts to update UI
                 await self.refresh_contacts()
-                
+
                 return True
             else:
                 self.logger.error(f"✗ Failed to remove contact: {result}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Error removing contact: {e}")
             import traceback
+
             self.logger.debug(traceback.format_exc())
             return False
 
     async def get_channels(self) -> List[Dict[str, Any]]:
         """Get list of available channels.
-        
+
         Routes through ChannelManager for consistency.
         """
         if not self.channels:
             return []
-        
+
         return await self.channels.get_channels()
 
     async def join_channel(self, channel_name: str, key: str = "") -> bool:
         """Join a channel by name and optional key.
-        
+
         Routes through ChannelManager for consistency.
         """
         if not self.channels:
             return False
-        
+
         return await self.channels.join_channel(channel_name, key)
-    
-    async def create_channel(self, channel_idx: int, channel_name: str, channel_secret: Optional[bytes] = None) -> bool:
+
+    async def create_channel(
+        self,
+        channel_idx: int,
+        channel_name: str,
+        channel_secret: Optional[bytes] = None,
+    ) -> bool:
         """Create or update a channel.
-        
+
         Args:
             channel_idx: Channel slot (1-7, 0 is reserved for Public)
             channel_name: Name of the channel (use # prefix for auto-hash secret)
             channel_secret: Optional 16-byte secret (auto-generated if name starts with #)
-            
+
         Returns:
             True if successful
         """
         if not self.meshcore:
             return False
-        
+
         try:
             self.logger.info(f"Creating channel {channel_idx}: {channel_name}")
-            result = await self.meshcore.commands.set_channel(channel_idx, channel_name, channel_secret)
-            
+            result = await self.meshcore.commands.set_channel(
+                channel_idx, channel_name, channel_secret
+            )
+
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to create channel: {result}")
                 return False
-            
+
             self.logger.info(f"Channel {channel_idx} created successfully")
             # Refresh channels list
             if self.channels:
                 await self.channels.refresh()
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error creating channel: {e}")
             return False
 
     async def send_channel_message(self, channel_id: int, message: str) -> bool:
         """Send a message to a specific channel.
-        
+
         Routes through ChannelManager for consistency, then stores in database.
         """
         if not self.meshcore or not self.channels:
@@ -1812,36 +1974,40 @@ class MeshConnection:
 
         try:
             import time
-            
+
             # Use ChannelManager to send the message
             status_info = await self.channels.send_message(channel_id, message)
-            
+
             if not status_info:
-                self.logger.error(f"ChannelManager returned False for channel {channel_id}")
+                self.logger.error(
+                    f"ChannelManager returned False for channel {channel_id}"
+                )
                 return False
-            
-            self.logger.info(f"Channel message sent successfully, result type: {type(status_info)}")
+
+            self.logger.info(
+                f"Channel message sent successfully, result type: {type(status_info)}"
+            )
             self.logger.debug(f"Channel status_info: {status_info}")
-            
+
             # Note: Channel messages don't support ACK tracking (they're broadcasts)
             # Only show "Sent" status, no repeat tracking
-            
+
             # Show "Sent" notification
             if self._message_callback:
                 self._message_callback("System", "✓ Sent (broadcast)", "status")
-            
+
             # Store sent channel message in database (no ACK code for broadcasts)
             sent_msg = {
-                'type': 'channel',
-                'sender': 'Me',
-                'sender_pubkey': '',
-                'text': message,
-                'timestamp': int(time.time()),
-                'channel': channel_id,
-                'sent': True,
-                'ack_code': None,
-                'delivery_status': 'broadcast',
-                'repeat_count': 0,
+                "type": "channel",
+                "sender": "Me",
+                "sender_pubkey": "",
+                "text": message,
+                "timestamp": int(time.time()),
+                "channel": channel_id,
+                "sent": True,
+                "ack_code": None,
+                "delivery_status": "broadcast",
+                "repeat_count": 0,
             }
             self.messages.append(sent_msg)
             if self.db:
@@ -1850,15 +2016,17 @@ class MeshConnection:
                 channel_name = f"Channel {channel_id}" if channel_id != 0 else "Public"
                 self.db.mark_as_read(channel_name)
 
-            self.logger.info(f"Sent and stored message to channel {channel_id}: {message}")
+            self.logger.info(
+                f"Sent and stored message to channel {channel_id}: {message}"
+            )
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error sending channel message: {e}")
             return False
 
     def clear_received_messages(self):
         """Clear the received messages buffer."""
-        if hasattr(self, 'received_messages'):
+        if hasattr(self, "received_messages"):
             self.received_messages.clear()
             self.logger.debug("Cleared received messages buffer")

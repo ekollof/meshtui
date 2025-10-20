@@ -5,14 +5,13 @@ meshtui - Textual TUI interface to meshcore companion radios
 
 import argparse
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Optional
 
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Click
 from textual.widgets import (
     Button,
@@ -26,7 +25,6 @@ from textual.widgets import (
     Static,
     TabbedContent,
     TabPane,
-    TextArea,
 )
 from textual.binding import Binding
 
@@ -35,7 +33,7 @@ from .connection import MeshConnection
 
 class InstantButton(Button):
     """Button that activates on first click without requiring focus."""
-    
+
     async def _on_click(self, event: Click) -> None:
         """Handle click event to activate immediately."""
         event.stop()
@@ -44,16 +42,17 @@ class InstantButton(Button):
 
 def sanitize_id(name: str) -> str:
     """Convert a name to a valid HTML/CSS ID.
-    
+
     Args:
         name: The name to sanitize
-        
+
     Returns:
         Valid ID string with only letters, numbers, underscores, and hyphens
     """
     # Replace spaces and invalid characters with underscores
     import re
-    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", name)
     # Ensure it doesn't start with a number
     if sanitized and sanitized[0].isdigit():
         sanitized = f"_{sanitized}"
@@ -129,16 +128,22 @@ class MeshTUI(App):
             with Vertical(id="sidebar"):
                 yield Static("Contacts", id="contacts-header")
                 yield ListView(id="contacts-list")
-                
+
                 with Horizontal(id="channels-header-row"):
                     yield Static("Channels", id="channels-header")
                     yield Button("+", id="create-channel-btn", variant="success")
                 yield ListView(id="channels-list")
-                
+
                 # Instant-click buttons for sidebar
-                yield InstantButton("Scan BLE Devices", id="scan-ble-btn", variant="primary")
-                yield InstantButton("Send Advert (0-hop)", id="advert-0hop-btn", variant="primary")
-                yield InstantButton("Send Advert (Flood)", id="advert-flood-btn", variant="default")
+                yield InstantButton(
+                    "Scan BLE Devices", id="scan-ble-btn", variant="primary"
+                )
+                yield InstantButton(
+                    "Send Advert (0-hop)", id="advert-0hop-btn", variant="primary"
+                )
+                yield InstantButton(
+                    "Send Advert (Flood)", id="advert-flood-btn", variant="default"
+                )
 
             # Main content area with tabs
             with Vertical(id="main-content"):
@@ -155,32 +160,57 @@ class MeshTUI(App):
                                     id="message-input",
                                 )
                                 yield Button("Ping", id="ping-btn", variant="default")
-                                yield Button("Delete Contact", id="delete-contact-btn", variant="error")
+                                yield Button(
+                                    "Delete Contact",
+                                    id="delete-contact-btn",
+                                    variant="error",
+                                )
                                 yield Button("Send", id="send-btn", variant="primary")
 
                     with TabPane("Device Settings", id="settings-tab"):
                         # Device configuration area
                         with Vertical(id="settings-container"):
                             yield Static("Device Configuration", id="settings-header")
-                            yield Static("Configure your connected MeshCore device", classes="help-text")
+                            yield Static(
+                                "Configure your connected MeshCore device",
+                                classes="help-text",
+                            )
 
                             # Device Info Section
-                            yield Static("[bold]Device Information[/bold]", classes="section-title")
+                            yield Static(
+                                "[bold]Device Information[/bold]",
+                                classes="section-title",
+                            )
                             with Horizontal():
                                 yield Static("Device Name:", classes="label")
-                                yield Input(placeholder="Device name", id="settings-name-input")
-                                yield Button("Set Name", id="settings-name-btn", variant="primary")
+                                yield Input(
+                                    placeholder="Device name", id="settings-name-input"
+                                )
+                                yield Button(
+                                    "Set Name",
+                                    id="settings-name-btn",
+                                    variant="primary",
+                                )
 
                             # Radio Configuration Section
-                            yield Static("[bold]Radio Configuration[/bold]", classes="section-title")
+                            yield Static(
+                                "[bold]Radio Configuration[/bold]",
+                                classes="section-title",
+                            )
                             with Horizontal():
                                 yield Static("TX Power (dBm):", classes="label")
-                                yield Input(placeholder="TX power", id="settings-tx-power-input")
-                                yield Button("Set", id="settings-tx-power-btn", variant="primary")
+                                yield Input(
+                                    placeholder="TX power", id="settings-tx-power-input"
+                                )
+                                yield Button(
+                                    "Set", id="settings-tx-power-btn", variant="primary"
+                                )
 
                             with Horizontal():
                                 yield Static("Frequency (MHz):", classes="label")
-                                yield Input(placeholder="915.0", id="settings-freq-input")
+                                yield Input(
+                                    placeholder="915.0", id="settings-freq-input"
+                                )
                                 yield Static("Bandwidth (kHz):", classes="label")
                                 yield Input(placeholder="125.0", id="settings-bw-input")
                             with Horizontal():
@@ -188,27 +218,50 @@ class MeshTUI(App):
                                 yield Input(placeholder="7-12", id="settings-sf-input")
                                 yield Static("Coding Rate:", classes="label")
                                 yield Input(placeholder="5-8", id="settings-cr-input")
-                                yield Button("Set Radio", id="settings-radio-btn", variant="primary")
+                                yield Button(
+                                    "Set Radio",
+                                    id="settings-radio-btn",
+                                    variant="primary",
+                                )
 
                             # Location Section
-                            yield Static("[bold]Location[/bold]", classes="section-title")
+                            yield Static(
+                                "[bold]Location[/bold]", classes="section-title"
+                            )
                             with Horizontal():
                                 yield Static("Latitude:", classes="label")
                                 yield Input(placeholder="0.0", id="settings-lat-input")
                                 yield Static("Longitude:", classes="label")
                                 yield Input(placeholder="0.0", id="settings-lon-input")
-                                yield Button("Set Coords", id="settings-coords-btn", variant="primary")
+                                yield Button(
+                                    "Set Coords",
+                                    id="settings-coords-btn",
+                                    variant="primary",
+                                )
 
                             # Device Actions Section
-                            yield Static("[bold]Device Actions[/bold]", classes="section-title")
+                            yield Static(
+                                "[bold]Device Actions[/bold]", classes="section-title"
+                            )
                             with Horizontal():
-                                yield Button("Reboot Device", id="settings-reboot-btn", variant="error")
-                                yield Button("Get Battery Info", id="settings-battery-btn")
+                                yield Button(
+                                    "Reboot Device",
+                                    id="settings-reboot-btn",
+                                    variant="error",
+                                )
+                                yield Button(
+                                    "Get Battery Info", id="settings-battery-btn"
+                                )
                                 yield Button("Sync Time", id="settings-time-btn")
 
                             # Status output area
                             yield Static("Status:", classes="section-label")
-                            yield RichLog(id="settings-status-area", auto_scroll=True, wrap=True, markup=True)
+                            yield RichLog(
+                                id="settings-status-area",
+                                auto_scroll=True,
+                                wrap=True,
+                                markup=True,
+                            )
 
                     with TabPane("Node Management", id="node-tab"):
                         # Node management area (for repeaters and sensors)
@@ -220,19 +273,33 @@ class MeshTUI(App):
 
                             # Right: Node control panel
                             with Vertical(id="node-control-container"):
-                                yield Static("Node Administration", id="node-control-header")
-                                yield Static("For Repeaters (type 2) and Sensors (type 4)", classes="help-text")
-                                yield Static("Room admin: Login via Chat tab with admin password", classes="help-text")
-                                yield Static("Tip: Leave node name blank to use current chat contact", classes="help-text")
+                                yield Static(
+                                    "Node Administration", id="node-control-header"
+                                )
+                                yield Static(
+                                    "For Repeaters (type 2) and Sensors (type 4)",
+                                    classes="help-text",
+                                )
+                                yield Static(
+                                    "Room admin: Login via Chat tab with admin password",
+                                    classes="help-text",
+                                )
+                                yield Static(
+                                    "Tip: Leave node name blank to use current chat contact",
+                                    classes="help-text",
+                                )
 
                                 # Login section (for repeaters only)
                                 yield Static("Repeater Login:", classes="section-label")
                                 with Horizontal():
                                     yield Input(
-                                        placeholder="Repeater name", id="node-name-input"
+                                        placeholder="Repeater name",
+                                        id="node-name-input",
                                     )
                                     yield Input(
-                                        placeholder="Password", id="node-password-input", password=True
+                                        placeholder="Password",
+                                        id="node-password-input",
+                                        password=True,
                                     )
                                     yield Button(
                                         "Login", id="node-login-btn", variant="primary"
@@ -242,10 +309,12 @@ class MeshTUI(App):
                                 yield Static("Send Command:", classes="section-label")
                                 with Horizontal():
                                     yield Input(
-                                        placeholder="Node name (repeater/room/sensor)", id="node-cmd-target-input"
+                                        placeholder="Node name (repeater/room/sensor)",
+                                        id="node-cmd-target-input",
                                     )
                                     yield Input(
-                                        placeholder="Command (e.g., 'help', 'status')", id="node-command-input"
+                                        placeholder="Command (e.g., 'help', 'status')",
+                                        id="node-command-input",
                                     )
                                     yield Button(
                                         "Send",
@@ -257,14 +326,15 @@ class MeshTUI(App):
                                 yield Static("Request Status:", classes="section-label")
                                 with Horizontal():
                                     yield Input(
-                                        placeholder="Node name", id="node-status-target-input"
+                                        placeholder="Node name",
+                                        id="node-status-target-input",
                                     )
                                     yield Button(
                                         "Get Status",
                                         id="node-status-btn",
                                         variant="primary",
                                     )
-                                
+
                                 # Output area
                                 yield Static("Output:", classes="section-label")
                                 yield RichLog(
@@ -275,7 +345,10 @@ class MeshTUI(App):
                         # Application logs
                         with Vertical(id="logs-container"):
                             yield Static("Application Logs", id="logs-header")
-                            yield Static("Debug and status messages from MeshTUI", classes="help-text")
+                            yield Static(
+                                "Debug and status messages from MeshTUI",
+                                classes="help-text",
+                            )
                             yield Log(id="log-panel", auto_scroll=True)
 
         yield Footer()
@@ -306,7 +379,9 @@ class MeshTUI(App):
         self.node_password_input = self.query_one("#node-password-input", Input)
         self.node_cmd_target_input = self.query_one("#node-cmd-target-input", Input)
         self.node_command_input = self.query_one("#node-command-input", Input)
-        self.node_status_target_input = self.query_one("#node-status-target-input", Input)
+        self.node_status_target_input = self.query_one(
+            "#node-status-target-input", Input
+        )
         self.node_status_area = self.query_one("#node-status-area", RichLog)
 
         # Populate command reference cheat sheet
@@ -324,52 +399,52 @@ class MeshTUI(App):
         root_logger.addHandler(self.log_handler)
 
         self.logger.info("MeshTUI started - logging to ~/.config/meshtui/meshtui.log")
-        
+
         # Register message callback for notifications
         self.connection.set_message_callback(self._on_new_message)
-        
+
         # Register contacts callback for UI updates
         self.connection.set_contacts_callback(self._on_contacts_updated)
 
         # Try to auto-connect if possible (schedule after mount)
         self.call_later(lambda: asyncio.create_task(self.auto_connect()))
-        
+
         # Start periodic message refresh (every 2 seconds)
         self.set_interval(2.0, self.periodic_message_refresh)
-    
+
     def _populate_command_reference(self):
         """Populate the command reference cheat sheet."""
         from rich.text import Text
-        
+
         self.command_reference.write(Text("Common Commands:", style="bold yellow"))
         self.command_reference.write("")
-        
+
         # General commands
         self.command_reference.write(Text("Information:", style="bold cyan"))
         self.command_reference.write("  status    - System status")
         self.command_reference.write("  ver       - Firmware version")
         self.command_reference.write("  clock     - Show current time")
         self.command_reference.write("")
-        
+
         # Clock commands
         self.command_reference.write(Text("Time Sync:", style="bold cyan"))
         self.command_reference.write("  clock sync      - Sync time")
         self.command_reference.write("  clock set <ts>  - Set Unix timestamp")
         self.command_reference.write("")
-        
+
         # Room commands
         self.command_reference.write(Text("Room Admin:", style="bold cyan"))
         self.command_reference.write("  list_users  - Show logged in users")
         self.command_reference.write("  kick <user> - Kick user from room")
         self.command_reference.write("  ban <user>  - Ban user from room")
         self.command_reference.write("")
-        
+
         # Network commands
         self.command_reference.write(Text("Network:", style="bold cyan"))
         self.command_reference.write("  neighbors  - Show nearby nodes")
         self.command_reference.write("  path       - Show routing path")
         self.command_reference.write("")
-        
+
         # Radio config
         self.command_reference.write(Text("Radio Settings:", style="bold cyan"))
         self.command_reference.write("  get_config        - Show config")
@@ -384,9 +459,16 @@ class MeshTUI(App):
         # Schedule UI update
         self.call_later(lambda: asyncio.create_task(self.update_contacts()))
 
-    def _on_new_message(self, sender: str, text: str, msg_type: str, channel_name: Optional[str] = None, txt_type: int = 0):
+    def _on_new_message(
+        self,
+        sender: str,
+        text: str,
+        msg_type: str,
+        channel_name: Optional[str] = None,
+        txt_type: int = 0,
+    ):
         """Callback when a new message arrives.
-        
+
         Args:
             sender: Name of the sender
             text: Message text
@@ -395,7 +477,7 @@ class MeshTUI(App):
             txt_type: Text type (0=regular message, 1=command response)
         """
         # Handle status notifications (sent/ACK from repeaters)
-        if msg_type == 'status':
+        if msg_type == "status":
             self.logger.debug(f"📋 Status notification: {text}")
             try:
                 # Show status in chat area if we're viewing a channel or contact
@@ -404,9 +486,9 @@ class MeshTUI(App):
             except Exception as e:
                 self.logger.error(f"Failed to display status: {e}")
             return
-        
+
         # Handle ACK notifications (message repeated by repeater) - legacy
-        if msg_type == 'ack':
+        if msg_type == "ack":
             self.logger.debug(f"📋 ACK notification: {text}")
             try:
                 # Show ACK in chat area if we're viewing a channel or contact
@@ -415,12 +497,13 @@ class MeshTUI(App):
             except Exception as e:
                 self.logger.error(f"Failed to display ACK: {e}")
             return
-        
+
         # Route command responses (txt_type=1) to Node Management output
         if txt_type == 1:
             self.logger.debug(f"📋 Command response from {sender}: {text}")
             try:
                 from rich.text import Text
+
                 # Create Rich Text with proper styling
                 output = Text()
                 if sender:
@@ -432,44 +515,59 @@ class MeshTUI(App):
                 self.logger.error(f"Failed to display command response: {e}")
             # Return early - don't show command responses in chat
             return
-        
+
         # Check if this message is for the current view
         is_current_view = False
-        
-        self.logger.debug(f"🔍 Message callback: sender={sender}, msg_type={msg_type}, channel={channel_name}, current_contact={self.current_contact}, current_channel={self.current_channel}")
-        
-        if (msg_type == 'contact' or msg_type == 'room') and self.current_contact == sender:
+
+        self.logger.debug(
+            f"🔍 Message callback: sender={sender}, msg_type={msg_type}, channel={channel_name}, current_contact={self.current_contact}, current_channel={self.current_channel}"
+        )
+
+        if (
+            msg_type == "contact" or msg_type == "room"
+        ) and self.current_contact == sender:
             is_current_view = True
-        elif msg_type == 'channel' and channel_name:
-            is_current_view = (self.current_channel == channel_name or 
-                             (channel_name == "Public" and self.current_channel == "Public"))
-        
+        elif msg_type == "channel" and channel_name:
+            is_current_view = self.current_channel == channel_name or (
+                channel_name == "Public" and self.current_channel == "Public"
+            )
+
         self.logger.debug(f"🔍 is_current_view={is_current_view}")
 
         if is_current_view:
             # Message is for current view - refresh immediately and mark as read
-            self.logger.info(f"✅ New message in current view from {sender}, refreshing display")
+            self.logger.info(
+                f"✅ New message in current view from {sender}, refreshing display"
+            )
             self.connection.mark_as_read(sender)
             asyncio.create_task(self.refresh_messages())
             # Update the display to clear the unread count
-            if msg_type in ('contact', 'room'):
+            if msg_type in ("contact", "room"):
                 self._update_single_contact_display(sender)
-            elif msg_type == 'channel' and channel_name:
+            elif msg_type == "channel" and channel_name:
                 self._update_single_channel_display(channel_name)
         else:
             # Message is from another contact/channel - show notification and update that contact's unread indicator
-            source = channel_name if msg_type == 'channel' else sender
+            source = channel_name if msg_type == "channel" else sender
             preview = text[:50] + "..." if len(text) > 50 else text
             self.logger.info(f"💬 New message from {source}: {preview}")
-            self.notify(f"New message from {source}", title="Message Received", severity="information")
+            self.notify(
+                f"New message from {source}",
+                title="Message Received",
+                severity="information",
+            )
             # Update just this contact/channel's display to show new unread count
-            if msg_type in ('contact', 'room'):
-                self.logger.debug(f"🔍 Calling _update_single_contact_display for {sender}")
+            if msg_type in ("contact", "room"):
+                self.logger.debug(
+                    f"🔍 Calling _update_single_contact_display for {sender}"
+                )
                 self._update_single_contact_display(sender)
-            elif msg_type == 'channel' and channel_name:
-                self.logger.debug(f"🔍 Calling _update_single_channel_display for {channel_name}")
+            elif msg_type == "channel" and channel_name:
+                self.logger.debug(
+                    f"🔍 Calling _update_single_channel_display for {channel_name}"
+                )
                 self._update_single_channel_display(channel_name)
-    
+
     def _update_single_contact_display(self, contact_name: str) -> None:
         """Update the display of a single contact in the list to reflect new unread count.
 
@@ -491,10 +589,15 @@ class MeshTUI(App):
 
             # Get fresh last_seen from database (it's updated when messages arrive)
             db_contact = self.connection.db.get_contact_by_name(contact_name)
-            last_seen = db_contact.get("last_seen", 0) if db_contact else contact.get("last_seen", 0)
-            
+            last_seen = (
+                db_contact.get("last_seen", 0)
+                if db_contact
+                else contact.get("last_seen", 0)
+            )
+
             # Calculate freshness color
             import time
+
             age_seconds = time.time() - last_seen if last_seen > 0 else 999999
             if age_seconds < 300:  # 5 minutes
                 color = "green"
@@ -502,20 +605,26 @@ class MeshTUI(App):
                 color = "yellow"
             else:
                 color = "red"
-            
+
             # Format display
             type_icon = "🏠" if contact_type == 3 else ""
             if unread > 0:
-                display_text = f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
+                display_text = (
+                    f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
+                )
             else:
                 display_text = f"[{color}]○[/{color}] {type_icon}{contact_name}"
-            
+
             # Update the Static widget inside the ListItem
             static = list_item.query_one(Static)
             static.update(display_text)
-            self.logger.debug(f"Updated contact display for {contact_name}: unread={unread}")
+            self.logger.debug(
+                f"Updated contact display for {contact_name}: unread={unread}"
+            )
         except Exception as e:
-            self.logger.debug(f"Could not update contact display for {contact_name}: {e}")
+            self.logger.debug(
+                f"Could not update contact display for {contact_name}: {e}"
+            )
 
     def _update_single_channel_display(self, channel_name: str) -> None:
         """Update the display of a single channel in the list to reflect new unread count.
@@ -540,9 +649,13 @@ class MeshTUI(App):
             # Update the Static widget inside the ListItem
             static = list_item.query_one(Static)
             static.update(display_text)
-            self.logger.debug(f"Updated channel display for {channel_name}: unread={unread}")
+            self.logger.debug(
+                f"Updated channel display for {channel_name}: unread={unread}"
+            )
         except Exception as e:
-            self.logger.debug(f"Could not update channel display for {channel_name}: {e}")
+            self.logger.debug(
+                f"Could not update channel display for {channel_name}: {e}"
+            )
 
     async def auto_connect(self) -> None:
         """Attempt to auto-connect to a meshcore device."""
@@ -550,7 +663,9 @@ class MeshTUI(App):
 
         try:
             self.logger.info("Attempting auto-connect...")
-            self.logger.debug(f"Args: serial={self.args.serial}, tcp={self.args.tcp}, address={self.args.address}, baudrate={self.args.baudrate}")
+            self.logger.debug(
+                f"Args: serial={self.args.serial}, tcp={self.args.tcp}, address={self.args.address}, baudrate={self.args.baudrate}"
+            )
 
             # Check command line arguments for specific connection type
             if self.args.serial:
@@ -560,7 +675,9 @@ class MeshTUI(App):
                 try:
                     success = await asyncio.wait_for(
                         self.connection.connect_serial(
-                            port=self.args.serial, baudrate=self.args.baudrate, verify_meshcore=False
+                            port=self.args.serial,
+                            baudrate=self.args.baudrate,
+                            verify_meshcore=False,
                         ),
                         timeout=15.0,
                     )
@@ -576,9 +693,11 @@ class MeshTUI(App):
                     self.logger.debug("About to refresh messages...")
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 else:
-                    self.logger.error(f"Failed to connect to specified serial device: {self.args.serial}")
+                    self.logger.error(
+                        f"Failed to connect to specified serial device: {self.args.serial}"
+                    )
                 return  # Don't try auto-detection when serial is explicitly specified
-                    
+
             elif self.args.tcp:
                 self.logger.info(
                     f"Connecting to TCP device: {self.args.tcp}:{self.args.port}"
@@ -599,9 +718,11 @@ class MeshTUI(App):
                     await asyncio.wait_for(self.update_channels(), timeout=5.0)
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 else:
-                    self.logger.error(f"Failed to connect to specified TCP device: {self.args.tcp}:{self.args.port}")
+                    self.logger.error(
+                        f"Failed to connect to specified TCP device: {self.args.tcp}:{self.args.port}"
+                    )
                 return  # Don't try auto-detection when TCP is explicitly specified
-                    
+
             elif self.args.address:
                 self.logger.info(f"Connecting to BLE device: {self.args.address}")
                 try:
@@ -618,12 +739,16 @@ class MeshTUI(App):
                     await asyncio.wait_for(self.update_channels(), timeout=5.0)
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 else:
-                    self.logger.error(f"Failed to connect to specified BLE device: {self.args.address}")
+                    self.logger.error(
+                        f"Failed to connect to specified BLE device: {self.args.address}"
+                    )
                 return  # Don't try auto-detection when BLE address is explicitly specified
-                    
+
             # Fall back to auto-detection if no args provided
-            self.logger.info("No connection args provided, attempting auto-detection...")
-            
+            self.logger.info(
+                "No connection args provided, attempting auto-detection..."
+            )
+
             # First try serial devices with quick scan (prioritizes USB devices - faster and more reliable)
             self.logger.info("Scanning for serial devices...")
             try:
@@ -692,7 +817,7 @@ class MeshTUI(App):
             if not self.connection.is_connected():
                 self.logger.warning("Not connected to device")
                 return
-            
+
             success = await self.connection.send_advertisement(hops=0)
             if success:
                 self.logger.info("✓ Sent 0-hop advertisement successfully")
@@ -701,6 +826,7 @@ class MeshTUI(App):
         except Exception as e:
             self.logger.error(f"Error sending 0-hop advertisement: {e}")
             import traceback
+
             self.logger.debug(traceback.format_exc())
 
     @on(Button.Pressed, "#advert-flood-btn")
@@ -711,7 +837,7 @@ class MeshTUI(App):
             if not self.connection.is_connected():
                 self.logger.warning("Not connected to device")
                 return
-            
+
             success = await self.connection.send_advertisement(hops=3)
             if success:
                 self.logger.info("✓ Sent flood advertisement successfully (3 hops)")
@@ -720,122 +846,153 @@ class MeshTUI(App):
         except Exception as e:
             self.logger.error(f"Error sending flood advertisement: {e}")
             import traceback
+
             self.logger.debug(traceback.format_exc())
-    
+
     @on(Button.Pressed, "#create-channel-btn")
     def show_create_channel_dialog(self) -> None:
         """Show dialog to create a new channel."""
         from textual.widgets import Label
-        from textual.containers import VerticalScroll, Horizontal, Vertical
+        from textual.containers import Horizontal, Vertical
         from textual.screen import ModalScreen
-        
+
         class CreateChannelScreen(ModalScreen):
             """Modal for creating a new channel."""
-            
+
             def compose(self):
                 with Vertical(id="create-channel-dialog"):
                     yield Static("[bold cyan]Create New Channel[/bold cyan]")
-                    yield Static("Channel slot 0 is reserved for Public channel", classes="help-text")
-                    yield Static("Use # prefix (e.g., #mychannel) for auto-generated secret", classes="help-text")
+                    yield Static(
+                        "Channel slot 0 is reserved for Public channel",
+                        classes="help-text",
+                    )
+                    yield Static(
+                        "Use # prefix (e.g., #mychannel) for auto-generated secret",
+                        classes="help-text",
+                    )
                     yield Label("Channel Slot (1-7):")
                     yield Input(placeholder="1", id="channel-slot-input")
                     yield Label("Channel Name:")
-                    yield Input(placeholder="#mychannel or Custom Name", id="channel-name-input")
+                    yield Input(
+                        placeholder="#mychannel or Custom Name", id="channel-name-input"
+                    )
                     with Horizontal(id="dialog-buttons"):
                         yield Button("Create", id="create-btn", variant="success")
                         yield Button("Cancel", id="cancel-btn", variant="default")
-            
+
             @on(Button.Pressed, "#create-btn")
             async def create_channel(self):
                 """Create the channel."""
                 slot_input = self.query_one("#channel-slot-input", Input)
                 name_input = self.query_one("#channel-name-input", Input)
-                
+
                 try:
                     slot_str = slot_input.value.strip()
                     name = name_input.value.strip()
-                    
+
                     # Validate inputs
                     if not slot_str:
                         self.app.logger.error("Channel slot is required")
                         self.dismiss()
                         return
-                    
+
                     if not name:
                         self.app.logger.error("Channel name is required")
                         self.dismiss()
                         return
-                    
+
                     # Parse slot number
                     try:
                         slot = int(slot_str)
                     except ValueError:
-                        self.app.logger.error(f"Invalid channel slot: '{slot_str}' - must be a number")
+                        self.app.logger.error(
+                            f"Invalid channel slot: '{slot_str}' - must be a number"
+                        )
                         self.dismiss()
                         return
-                    
+
                     if slot < 1 or slot > 7:
-                        self.app.logger.error(f"Channel slot must be between 1 and 7, got {slot}")
+                        self.app.logger.error(
+                            f"Channel slot must be between 1 and 7, got {slot}"
+                        )
                         self.dismiss()
                         return
-                    
+
                     success = await self.app.connection.create_channel(slot, name)
                     if success:
                         self.app.logger.info(f"✓ Created channel {slot}: {name}")
                         # Refresh channels list
                         await self.app.update_channels()
                     else:
-                        self.app.logger.error(f"✗ Failed to create channel {slot}: {name}")
-                    
+                        self.app.logger.error(
+                            f"✗ Failed to create channel {slot}: {name}"
+                        )
+
                 except Exception as e:
                     self.app.logger.error(f"Error creating channel: {e}")
                     import traceback
+
                     self.app.logger.debug(traceback.format_exc())
-                
+
                 self.dismiss()
-            
+
             @on(Button.Pressed, "#cancel-btn")
             def cancel(self):
                 """Cancel channel creation."""
                 self.dismiss()
-        
+
         self.push_screen(CreateChannelScreen())
-    
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button clicks to trigger immediately without requiring focus first."""
         # This allows single-click activation of buttons even when they don't have focus
         pass
-    
+
     @on(Button.Pressed, "#scan-ble-btn")
     async def show_ble_scanner(self) -> None:
         """Show BLE device scanner dialog."""
-        from textual.widgets import Label, LoadingIndicator
-        from textual.containers import Vertical, Horizontal
+        from textual.widgets import Label
+        from textual.containers import Horizontal
         from textual.screen import ModalScreen
-        
+
         class BLEScannerScreen(ModalScreen):
             """Modal for scanning and selecting BLE devices."""
-            
+
             def compose(self):
                 with VerticalScroll(id="ble-scanner-dialog"):
                     yield Static("[bold cyan]BLE Device Connection[/bold cyan]")
-                    yield Static("Scan for new devices or enter address of paired device", classes="help-text")
-                    
+                    yield Static(
+                        "Scan for new devices or enter address of paired device",
+                        classes="help-text",
+                    )
+
                     yield Label("Known Device Address (if already paired):")
-                    yield Input(placeholder="E1:C7:FD:AB:2B:DB or leave blank to scan", id="ble-address-input")
-                    
+                    yield Input(
+                        placeholder="E1:C7:FD:AB:2B:DB or leave blank to scan",
+                        id="ble-address-input",
+                    )
+
                     yield Static("Or scan for devices:", classes="section-label")
                     yield Static("Scanning for MeshCore devices...", id="scan-status")
                     yield ListView(id="ble-devices-list")
-                    
+
                     yield Label("BLE PIN:")
-                    yield Static("Required for first connection, optional if already paired", classes="help-text")
-                    yield Input(placeholder="Enter PIN from device screen (or leave blank if paired)", id="ble-pin-input", password=False)
+                    yield Static(
+                        "Required for first connection, optional if already paired",
+                        classes="help-text",
+                    )
+                    yield Input(
+                        placeholder="Enter PIN from device screen (or leave blank if paired)",
+                        id="ble-pin-input",
+                        password=False,
+                    )
                     with Horizontal(id="dialog-buttons"):
-                        yield Button("Connect", id="connect-addr-btn", variant="success")
+                        yield Button(
+                            "Connect", id="connect-addr-btn", variant="success"
+                        )
                         yield Button("Rescan", id="rescan-btn", variant="primary")
                         yield Button("Close", id="close-scan-btn", variant="default")
-            
+
             def on_mount(self):
                 """Load saved address and schedule background scan."""
                 # Try to load saved BLE address
@@ -849,26 +1006,30 @@ class MeshTUI(App):
                 else:
                     # Schedule scan in background so dialog shows immediately
                     self.call_later(self.scan_devices)
-            
+
             async def scan_devices(self):
                 """Scan for BLE devices and populate list."""
                 status = self.query_one("#scan-status", Static)
                 devices_list = self.query_one("#ble-devices-list", ListView)
-                
+
                 try:
                     status.update("Scanning for MeshCore BLE devices... (5s)")
                     devices_list.clear()
-                    
+
                     # Scan for devices using the BLE transport
-                    devices = await self.app.connection.ble_transport.scan_devices(timeout=5.0)
-                    
+                    devices = await self.app.connection.ble_transport.scan_devices(
+                        timeout=5.0
+                    )
+
                     if devices:
-                        status.update(f"Found {len(devices)} MeshCore device(s). Click to connect:")
+                        status.update(
+                            f"Found {len(devices)} MeshCore device(s). Click to connect:"
+                        )
                         for device in devices:
-                            name = device.get('name', 'Unknown')
-                            address = device.get('address', 'Unknown')
-                            rssi = device.get('rssi', 'Unknown')
-                            
+                            name = device.get("name", "Unknown")
+                            address = device.get("address", "Unknown")
+                            rssi = device.get("rssi", "Unknown")
+
                             # Create a list item with device info
                             device_text = f"{name}\n  {address} (RSSI: {rssi})"
                             # Sanitize address for ID (remove colons and special chars)
@@ -878,39 +1039,45 @@ class MeshTUI(App):
                             devices_list.append(item)
                     else:
                         status.update("No MeshCore BLE devices found. Try Rescan.")
-                
+
                 except Exception as e:
                     self.app.logger.error(f"Error scanning BLE devices: {e}")
                     status.update(f"Error scanning: {e}")
-            
+
             @on(ListView.Selected, "#ble-devices-list")
             async def connect_to_device(self, event: ListView.Selected):
                 """Connect to selected BLE device."""
-                if event.item and hasattr(event.item, 'device_address'):
+                if event.item and hasattr(event.item, "device_address"):
                     address = event.item.device_address
                     pin_input = self.query_one("#ble-pin-input", Input)
                     pin = pin_input.value.strip()
-                    
+
                     if not pin:
                         status = self.query_one("#scan-status", Static)
-                        status.update("[red]Please enter the PIN shown on the device screen[/red]")
+                        status.update(
+                            "[red]Please enter the PIN shown on the device screen[/red]"
+                        )
                         return
-                    
-                    self.app.logger.info(f"Connecting to BLE device: {address} with PIN")
-                    
+
+                    self.app.logger.info(
+                        f"Connecting to BLE device: {address} with PIN"
+                    )
+
                     status = self.query_one("#scan-status", Static)
                     status.update(f"Connecting to {address} with PIN...")
-                    
+
                     # Disconnect if already connected
                     if self.app.connection.is_connected():
                         await self.app.connection.disconnect()
-                    
+
                     # Connect to selected device with PIN
-                    success = await self.app.connection.connect_ble(address=address, pin=pin)
-                    
+                    success = await self.app.connection.connect_ble(
+                        address=address, pin=pin
+                    )
+
                     if success:
                         self.app.logger.info(f"✓ Connected to {address}")
-                        status.update(f"✓ Connected, discovering nodes...")
+                        status.update("✓ Connected, discovering nodes...")
                         # Send advertisement to discover other nodes
                         await self.app.connection.send_advertisement(hops=3)
                         # Update UI
@@ -922,37 +1089,44 @@ class MeshTUI(App):
                         self.dismiss()
                     else:
                         self.app.logger.error(f"✗ Failed to connect to {address}")
-                        status.update(f"✗ Connection failed. Check PIN and try again.")
-            
+                        status.update("✗ Connection failed. Check PIN and try again.")
+
             @on(Button.Pressed, "#rescan-btn")
             async def rescan(self):
                 """Rescan for BLE devices."""
                 await self.scan_devices()
-            
+
             @on(Button.Pressed, "#connect-addr-btn")
             async def connect_by_address(self):
                 """Connect to a device by address."""
                 address_input = self.query_one("#ble-address-input", Input)
                 pin_input = self.query_one("#ble-pin-input", Input)
                 status = self.query_one("#scan-status", Static)
-                
+
                 address = address_input.value.strip()
                 pin = pin_input.value.strip() or None  # None if empty
-                
+
                 if not address:
-                    status.update("[red]Please enter a BLE address or scan for devices[/red]")
+                    status.update(
+                        "[red]Please enter a BLE address or scan for devices[/red]"
+                    )
                     return
-                
-                self.app.logger.info(f"Connecting to BLE address: {address}" + (" with PIN" if pin else " (no PIN)"))
+
+                self.app.logger.info(
+                    f"Connecting to BLE address: {address}"
+                    + (" with PIN" if pin else " (no PIN)")
+                )
                 status.update(f"Connecting to {address}...")
-                
+
                 # Disconnect if already connected
                 if self.app.connection.is_connected():
                     await self.app.connection.disconnect()
-                
+
                 # Connect to specified address
-                success = await self.app.connection.connect_ble(address=address, pin=pin)
-                
+                success = await self.app.connection.connect_ble(
+                    address=address, pin=pin
+                )
+
                 if success:
                     self.app.logger.info(f"✓ Connected to {address}")
                     status.update(f"✓ Connected to {address}")
@@ -964,18 +1138,20 @@ class MeshTUI(App):
                     self.dismiss()
                 else:
                     self.app.logger.error(f"✗ Failed to connect to {address}")
-                    status.update(f"✗ Connection failed. Check address/PIN and try again.")
-            
+                    status.update(
+                        "✗ Connection failed. Check address/PIN and try again."
+                    )
+
             @on(Button.Pressed, "#close-scan-btn")
             def close_scanner(self):
                 """Close the scanner dialog."""
                 self.dismiss()
-            
+
             def on_key(self, event):
                 """Close dialog on Escape key."""
                 if event.key == "escape":
                     self.dismiss()
-        
+
         self.push_screen(BLEScannerScreen())
 
     @on(Button.Pressed, "#send-btn")
@@ -994,11 +1170,15 @@ class MeshTUI(App):
                 # Check if we're waiting for room password
                 if self._awaiting_room_password:
                     # This is a password input for room login
-                    self.chat_area.write(f"[dim]Logging in...[/dim]")
-                    success = await self.connection.login_to_room(self.current_contact, message)
+                    self.chat_area.write("[dim]Logging in...[/dim]")
+                    success = await self.connection.login_to_room(
+                        self.current_contact, message
+                    )
                     if success:
-                        self.chat_area.write(f"[green]✓ Logged in successfully![/green]")
-                        self.chat_area.write(f"[dim]Loading queued messages...[/dim]")
+                        self.chat_area.write(
+                            "[green]✓ Logged in successfully![/green]"
+                        )
+                        self.chat_area.write("[dim]Loading queued messages...[/dim]")
                         self._awaiting_room_password = False
                         # Restore normal input mode
                         self.message_input.password = False
@@ -1006,38 +1186,42 @@ class MeshTUI(App):
                         self.message_input.value = ""
                         # Reload the contact messages (now includes room messages)
                         await self.load_contact_messages(self.current_contact)
-                        self.chat_area.write(f"[dim]Ready to chat![/dim]")
+                        self.chat_area.write("[dim]Ready to chat![/dim]")
                     else:
-                        self.chat_area.write(f"[red]✗ Login failed. Try again.[/red]")
+                        self.chat_area.write("[red]✗ Login failed. Try again.[/red]")
                         # Keep password mode on for retry
                     self.message_input.value = ""
                     return
-                
+
                 # Sending to a contact (direct message)
                 from datetime import datetime
+
                 timestamp = datetime.now().strftime("%H:%M:%S")
-                
+
                 # Show the message first
                 self.chat_area.write(
                     f"[dim]{timestamp}[/dim] [blue]You → {self.current_contact}:[/blue] {message}"
                 )
-                
+
                 # Then send it (status "✓ Sent" will appear after via callback)
                 result = await self.connection.send_message(
                     self.current_contact, message
                 )
-                
+
                 if result:
                     self.message_input.value = ""
                     # Update contact display to refresh last_seen indicator
                     self._update_single_contact_display(self.current_contact)
                 else:
-                    self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Failed to send[/red]")
+                    self.chat_area.write(
+                        f"[dim]{timestamp}[/dim] [red]✗ Failed to send[/red]"
+                    )
             elif self.current_channel:
                 # Sending to a channel
                 from datetime import datetime
+
                 timestamp = datetime.now().strftime("%H:%M:%S")
-                
+
                 # Extract channel index from "Channel X" format
                 if self.current_channel == "Public":
                     channel_name = "Public"
@@ -1049,23 +1233,31 @@ class MeshTUI(App):
                         channel_id = int(channel_name.split()[-1])
                     except (ValueError, IndexError):
                         self.logger.error(f"Invalid channel format: {channel_name}")
-                        self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Invalid channel[/red]")
+                        self.chat_area.write(
+                            f"[dim]{timestamp}[/dim] [red]✗ Invalid channel[/red]"
+                        )
                         return
-                
+
                 # Show the message first
                 self.chat_area.write(
                     f"[dim]{timestamp}[/dim] [cyan]You → {channel_name}:[/cyan] {message}"
                 )
-                
+
                 # Then send it (status "✓ Sent" will appear after via callback)
-                success = await self.connection.send_channel_message(channel_id, message)
-                
+                success = await self.connection.send_channel_message(
+                    channel_id, message
+                )
+
                 if success:
                     self.message_input.value = ""
                 else:
-                    self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Failed to send channel message[/red]")
+                    self.chat_area.write(
+                        f"[dim]{timestamp}[/dim] [red]✗ Failed to send channel message[/red]"
+                    )
             else:
-                self.chat_area.write("[yellow]No contact or channel selected. Click a contact or channel to start chatting.[/yellow]")
+                self.chat_area.write(
+                    "[yellow]No contact or channel selected. Click a contact or channel to start chatting.[/yellow]"
+                )
         except Exception as e:
             self.chat_area.write(f"[red]Error sending message: {e}[/red]")
 
@@ -1078,7 +1270,9 @@ class MeshTUI(App):
     async def ping_contact(self) -> None:
         """Ping the currently selected contact to test connectivity."""
         if not self.current_contact:
-            self.chat_area.write("[yellow]No contact selected. Select a contact first.[/yellow]")
+            self.chat_area.write(
+                "[yellow]No contact selected. Select a contact first.[/yellow]"
+            )
             return
 
         if not self.connection or not self.connection.is_connected:
@@ -1092,29 +1286,38 @@ class MeshTUI(App):
 
             if result["success"]:
                 latency_ms = result["latency"] * 1000
-                self.chat_area.write(f"[green]✓ {self.current_contact} is reachable! Latency: {latency_ms:.0f}ms[/green]")
+                self.chat_area.write(
+                    f"[green]✓ {self.current_contact} is reachable! Latency: {latency_ms:.0f}ms[/green]"
+                )
 
                 # Show status info if available
                 if result.get("status"):
                     status = result["status"]
-                    self.chat_area.write(f"[dim]Status: Battery {status.get('battery', 'N/A')}%, "
-                                       f"SNR {status.get('snr', 'N/A')} dB[/dim]")
+                    self.chat_area.write(
+                        f"[dim]Status: Battery {status.get('battery', 'N/A')}%, "
+                        f"SNR {status.get('snr', 'N/A')} dB[/dim]"
+                    )
             else:
                 error = result.get("error", "Unknown error")
                 self.chat_area.write(f"[red]✗ Ping failed: {error}[/red]")
-                self.chat_area.write(f"[yellow]Contact may be out of range or offline[/yellow]")
+                self.chat_area.write(
+                    "[yellow]Contact may be out of range or offline[/yellow]"
+                )
 
         except Exception as e:
             self.chat_area.write(f"[red]Error pinging contact: {e}[/red]")
             self.logger.error(f"Error in ping handler: {e}")
             import traceback
+
             self.logger.debug(traceback.format_exc())
 
     @on(Button.Pressed, "#delete-contact-btn")
     async def delete_contact(self) -> None:
         """Delete the currently selected contact from the device."""
         if not self.current_contact:
-            self.chat_area.write("[yellow]No contact selected. Select a contact first.[/yellow]")
+            self.chat_area.write(
+                "[yellow]No contact selected. Select a contact first.[/yellow]"
+            )
             return
 
         if not self.connection or not self.connection.is_connected:
@@ -1125,28 +1328,35 @@ class MeshTUI(App):
         contact_name = self.current_contact
 
         # Confirm deletion
-        self.chat_area.write(f"[yellow]⚠ Deleting contact '{contact_name}' from device...[/yellow]")
+        self.chat_area.write(
+            f"[yellow]⚠ Deleting contact '{contact_name}' from device...[/yellow]"
+        )
 
         try:
             success = await self.connection.remove_contact(contact_name)
 
             if success:
-                self.chat_area.write(f"[green]✓ Contact '{contact_name}' removed successfully[/green]")
-                self.chat_area.write(f"[dim]The contact list has been refreshed.[/dim]")
-                
+                self.chat_area.write(
+                    f"[green]✓ Contact '{contact_name}' removed successfully[/green]"
+                )
+                self.chat_area.write("[dim]The contact list has been refreshed.[/dim]")
+
                 # Clear selection and chat area
                 self.current_contact = None
                 self.chat_area.clear()
-                
+
                 # Update the UI to reflect the deleted contact
                 await self.update_contacts()
             else:
-                self.chat_area.write(f"[red]✗ Failed to remove contact '{contact_name}'[/red]")
+                self.chat_area.write(
+                    f"[red]✗ Failed to remove contact '{contact_name}'[/red]"
+                )
 
         except Exception as e:
             self.chat_area.write(f"[red]Error deleting contact: {e}[/red]")
             self.logger.error(f"Error in delete contact handler: {e}")
             import traceback
+
             self.logger.debug(traceback.format_exc())
 
     @on(ListView.Selected, "#contacts-list")
@@ -1154,30 +1364,42 @@ class MeshTUI(App):
         """Handle contact selection."""
         if event.item and event.item.id:
             # Look up the contact name from the ID mapping
-            self.logger.debug(f"🔍 Contact selected: item.id={event.item.id}, id_map={self._contact_id_map}")
+            self.logger.debug(
+                f"🔍 Contact selected: item.id={event.item.id}, id_map={self._contact_id_map}"
+            )
             contact_name = self._contact_id_map.get(event.item.id)
             if not contact_name:
                 self.logger.warning(f"No contact found for ID: {event.item.id}")
                 return
-            
-            self.logger.info(f"Selected contact: {contact_name} (from ID: {event.item.id})")
+
+            self.logger.info(
+                f"Selected contact: {contact_name} (from ID: {event.item.id})"
+            )
             self.current_contact = contact_name
             self.current_channel = None  # Clear channel selection
-            
+
             # Mark messages as read and update display
             self.connection.mark_as_read(contact_name)
             self._update_single_contact_display(contact_name)
 
             # Check if this is a room server (type 3) and prompt for password if needed
             contact = self.connection.get_contact_by_name(contact_name)
-            if contact and contact.get('type') == 3:
+            if contact and contact.get("type") == 3:
                 # This is a room server - check if we're logged in
                 if not self.connection.is_logged_into_room(contact_name):
                     self.chat_area.clear()
-                    self.chat_area.write(f"[bold cyan]{contact_name} (Room Server)[/bold cyan]")
-                    self.chat_area.write(f"[yellow]This is a room server. You need to login first.[/yellow]")
-                    self.chat_area.write(f"[dim]Type password in the input field below and press Enter to login.[/dim]")
-                    self.logger.info(f"{contact_name} is a room server, waiting for password")
+                    self.chat_area.write(
+                        f"[bold cyan]{contact_name} (Room Server)[/bold cyan]"
+                    )
+                    self.chat_area.write(
+                        "[yellow]This is a room server. You need to login first.[/yellow]"
+                    )
+                    self.chat_area.write(
+                        "[dim]Type password in the input field below and press Enter to login.[/dim]"
+                    )
+                    self.logger.info(
+                        f"{contact_name} is a room server, waiting for password"
+                    )
                     # Set a flag to indicate we're waiting for password
                     self._awaiting_room_password = True
                     # Enable password mode on message input
@@ -1185,31 +1407,37 @@ class MeshTUI(App):
                     self.message_input.placeholder = "Enter room password..."
                     self.message_input.focus()
                     return
-            
+
             # Regular contact or already logged in
             self._awaiting_room_password = False
             # Disable password mode
             self.message_input.password = False
             self.message_input.placeholder = "Type a message..."
-            
+
             # Update chat area header
             # Clear the chat area completely
             self.chat_area.clear()
             self.chat_area.lines.clear()  # Also clear internal lines buffer
-            
-            if contact and contact.get('type') == 3:
-                self.chat_area.write(f"[bold cyan]Chat with {contact_name} (Room Server)[/bold cyan]\n")
-            elif contact and contact.get('type') == 2:
-                self.chat_area.write(f"[bold cyan]Chat with {contact_name} (Repeater)[/bold cyan]\n")
+
+            if contact and contact.get("type") == 3:
+                self.chat_area.write(
+                    f"[bold cyan]Chat with {contact_name} (Room Server)[/bold cyan]\n"
+                )
+            elif contact and contact.get("type") == 2:
+                self.chat_area.write(
+                    f"[bold cyan]Chat with {contact_name} (Repeater)[/bold cyan]\n"
+                )
             else:
-                self.chat_area.write(f"[bold cyan]Chat with {contact_name}[/bold cyan]\n")
-            
+                self.chat_area.write(
+                    f"[bold cyan]Chat with {contact_name}[/bold cyan]\n"
+                )
+
             # Force refresh to ensure UI updates
             self.chat_area.refresh()
-            
+
             # Load message history for this contact
             await self.load_contact_messages(contact_name)
-            
+
             # Focus the message input
             self.message_input.focus()
 
@@ -1222,27 +1450,27 @@ class MeshTUI(App):
             if not channel_name:
                 self.logger.warning(f"No channel found for ID: {event.item.id}")
                 return
-            
+
             self.current_channel = channel_name
             self.current_contact = None  # Clear contact selection
             self.logger.info(f"Selected channel: {channel_name}")
-            
+
             # Mark channel messages as read and update display
             self.connection.mark_as_read(channel_name)
             self._update_single_channel_display(channel_name)
 
             # Update chat area header
             self.chat_area.clear()
-            
+
             # Show last seen for contacts
             contact = self.connection.get_contact_by_name(channel_name)
             if contact:
                 last_seen = contact.get("last_seen", 0)
                 if last_seen > 0:
-                    from datetime import datetime
                     import time
+
                     age_seconds = time.time() - last_seen
-                    
+
                     if age_seconds < 60:
                         last_seen_str = "just now"
                     elif age_seconds < 3600:
@@ -1251,18 +1479,24 @@ class MeshTUI(App):
                         last_seen_str = f"{int(age_seconds / 3600)} hr ago"
                     else:
                         last_seen_str = f"{int(age_seconds / 86400)} days ago"
-                    
-                    self.chat_area.write(f"[bold cyan]{channel_name}[/bold cyan] [dim](last seen: {last_seen_str})[/dim]\n")
+
+                    self.chat_area.write(
+                        f"[bold cyan]{channel_name}[/bold cyan] [dim](last seen: {last_seen_str})[/dim]\n"
+                    )
                 else:
                     self.chat_area.write(f"[bold cyan]{channel_name}[/bold cyan]\n")
             elif channel_name == "Public":
-                self.chat_area.write(f"[bold cyan]Public Channel (All Messages)[/bold cyan]\n")
+                self.chat_area.write(
+                    "[bold cyan]Public Channel (All Messages)[/bold cyan]\n"
+                )
             else:
-                self.chat_area.write(f"[bold cyan]Channel: {channel_name}[/bold cyan]\n")
-            
+                self.chat_area.write(
+                    f"[bold cyan]Channel: {channel_name}[/bold cyan]\n"
+                )
+
             # Load message history for this channel
             await self.load_channel_messages(channel_name)
-            
+
             # Focus the message input
             self.message_input.focus()
 
@@ -1282,8 +1516,9 @@ class MeshTUI(App):
             self.logger.debug(f"Retrieved {len(messages)} messages for {contact_name}")
             if messages:
                 from datetime import datetime
+
                 for msg in messages:
-                    timestamp = msg.get('timestamp', 0)
+                    timestamp = msg.get("timestamp", 0)
                     if timestamp and timestamp > 0:
                         try:
                             # Handle both ISO format and unix timestamp
@@ -1294,64 +1529,97 @@ class MeshTUI(App):
                             time_str = dt.strftime("%H:%M:%S")
                             self.logger.debug(f"Timestamp {timestamp} -> {time_str}")
                         except Exception as e:
-                            self.logger.error(f"Failed to format timestamp {timestamp}: {e}")
+                            self.logger.error(
+                                f"Failed to format timestamp {timestamp}: {e}"
+                            )
                             time_str = str(timestamp)
                     else:
                         time_str = "--:--:--"
-                        self.logger.debug(f"No timestamp for message: {msg.get('text', '')[:20]}")
-                    
-                    sender = msg.get('sender', 'Unknown')
-                    sender_pubkey = msg.get('sender_pubkey', '')
-                    actual_sender = msg.get('actual_sender')  # For room messages
-                    actual_sender_pubkey = msg.get('actual_sender_pubkey', '')
-                    msg_type = msg.get('type', 'contact')
-                    text = msg.get('text', '')
-                    signature = msg.get('signature', '')
-                    
+                        self.logger.debug(
+                            f"No timestamp for message: {msg.get('text', '')[:20]}"
+                        )
+
+                    sender = msg.get("sender", "Unknown")
+                    sender_pubkey = msg.get("sender_pubkey", "")
+                    actual_sender = msg.get("actual_sender")  # For room messages
+                    actual_sender_pubkey = msg.get("actual_sender_pubkey", "")
+                    msg_type = msg.get("type", "contact")
+                    text = msg.get("text", "")
+                    signature = msg.get("signature", "")
+
                     # Check if this message is from me by comparing pubkeys
                     is_from_me = False
-                    my_contact = self.connection.db.get_contact_by_me() if self.connection else None
+                    my_contact = (
+                        self.connection.db.get_contact_by_me()
+                        if self.connection
+                        else None
+                    )
                     if my_contact:
-                        my_pubkey = my_contact.get('pubkey')
+                        my_pubkey = my_contact.get("pubkey")
                         if my_pubkey:
                             # Check if any of the sender fields match our pubkey (prefix or full)
-                            if sender_pubkey and (sender_pubkey == my_pubkey or my_pubkey.startswith(sender_pubkey)):
+                            if sender_pubkey and (
+                                sender_pubkey == my_pubkey
+                                or my_pubkey.startswith(sender_pubkey)
+                            ):
                                 is_from_me = True
-                            elif actual_sender_pubkey and (actual_sender_pubkey == my_pubkey or my_pubkey.startswith(actual_sender_pubkey)):
+                            elif actual_sender_pubkey and (
+                                actual_sender_pubkey == my_pubkey
+                                or my_pubkey.startswith(actual_sender_pubkey)
+                            ):
                                 is_from_me = True
-                            elif signature and (signature == my_pubkey or my_pubkey.startswith(signature)):
+                            elif signature and (
+                                signature == my_pubkey
+                                or my_pubkey.startswith(signature)
+                            ):
                                 is_from_me = True
                     elif sender == "Me":
                         is_from_me = True
-                    
+
                     # Check if sender is a room server (type 3)
                     sender_contact = self.connection.get_contact_by_name(sender)
-                    is_room_server = sender_contact and sender_contact.get('type') == 3
-                    
+                    is_room_server = sender_contact and sender_contact.get("type") == 3
+
                     # If no actual_sender but we have a signature, try to decode it
                     if is_room_server and not actual_sender and signature:
-                        sig_contact = self.connection.contacts.get_by_key(signature) if self.connection.contacts else None
+                        sig_contact = (
+                            self.connection.contacts.get_by_key(signature)
+                            if self.connection.contacts
+                            else None
+                        )
                         if sig_contact:
-                            actual_sender = sig_contact.get('adv_name') or sig_contact.get('name', signature)
+                            actual_sender = sig_contact.get(
+                                "adv_name"
+                            ) or sig_contact.get("name", signature)
                         else:
                             actual_sender = signature[:8]  # Show short key if unknown
-                    
+
                     # Format sender display (same as refresh_messages)
                     if is_from_me:
                         # Message sent by me (based on pubkey) - always show as "You"
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n")
+                        self.chat_area.write(
+                            f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n"
+                        )
                     elif (msg_type == "room" or is_room_server) and actual_sender:
                         # Room message - show "Room / Sender: message"
                         display_sender = f"{sender} / {actual_sender}"
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {text}\n")
+                        self.chat_area.write(
+                            f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {text}\n"
+                        )
                     elif msg_type == "room" or is_room_server:
                         # Room message without sender info - show as anonymous
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/cyan] {text}\n")
+                        self.chat_area.write(
+                            f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/cyan] {text}\n"
+                        )
                     elif sender == contact_name:
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {text}\n")
+                        self.chat_area.write(
+                            f"[dim]{time_str}[/dim] [green]{sender}:[/green] {text}\n"
+                        )
                     else:
                         # Show actual sender name (could be someone else in a room conversation)
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {text}\n")
+                        self.chat_area.write(
+                            f"[dim]{time_str}[/dim] [green]{sender}:[/green] {text}\n"
+                        )
             else:
                 self.chat_area.write("[dim]No message history[/dim]")
         except Exception as e:
@@ -1363,8 +1631,9 @@ class MeshTUI(App):
             messages = self.connection.get_messages_for_channel(channel_name)
             if messages:
                 from datetime import datetime
+
                 for msg in messages:
-                    timestamp = msg.get('timestamp', 0)
+                    timestamp = msg.get("timestamp", 0)
                     if timestamp and timestamp > 0:
                         try:
                             # Handle both ISO format and unix timestamp
@@ -1373,20 +1642,23 @@ class MeshTUI(App):
                             else:
                                 dt = datetime.fromtimestamp(timestamp)
                             time_str = dt.strftime("%H:%M:%S")
-                        except:
+                        except Exception:
                             time_str = str(timestamp)
                     else:
                         time_str = "--:--:--"
-                    
-                    sender = msg.get('sender', 'Unknown')
-                    text = msg.get('text', '')
-                    channel = msg.get('channel', 0)
-                    
+
+                    sender = msg.get("sender", "Unknown")
+                    text = msg.get("text", "")
+
                     # Show "You" for messages sent by me
                     if sender == "Me":
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n")
+                        self.chat_area.write(
+                            f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n"
+                        )
                     else:
-                        self.chat_area.write(f"[dim]{time_str}[/dim] [yellow]{sender}:[/yellow] {text}\n")
+                        self.chat_area.write(
+                            f"[dim]{time_str}[/dim] [yellow]{sender}:[/yellow] {text}\n"
+                        )
             else:
                 self.chat_area.write("[dim]No message history[/dim]")
         except Exception as e:
@@ -1397,14 +1669,14 @@ class MeshTUI(App):
         import asyncio
 
         # Prevent concurrent updates
-        if hasattr(self, '_updating_contacts') and self._updating_contacts:
+        if hasattr(self, "_updating_contacts") and self._updating_contacts:
             self.logger.debug("Contact update already in progress, skipping")
             return
-        
+
         self._updating_contacts = True
         try:
             self.logger.debug("Starting contact update process...")
-            
+
             # Just get the contacts that were already refreshed by the connection
             # Don't call refresh_contacts() again as it may have just been called
             contacts = self.connection.get_contacts()
@@ -1418,24 +1690,27 @@ class MeshTUI(App):
                         await item.remove()
             except Exception as e:
                 self.logger.debug(f"Error removing old items: {e}")
-            
+
             # Now clear the list and mapping
             self.contacts_list.clear()
             self._contact_id_map.clear()
-            
+
             for contact in contacts:
                 contact_name = contact.get("name", "Unknown")
                 contact_type = contact.get("type", 0)
-                
+
                 # Get unread count
                 unread = self.connection.get_unread_count(contact_name)
-                
+
                 # Determine freshness color based on last_seen
                 last_seen = contact.get("last_seen", 0)
-                self.logger.debug(f"🔍 Contact {contact_name}: unread={unread}, last_seen={last_seen}")
+                self.logger.debug(
+                    f"🔍 Contact {contact_name}: unread={unread}, last_seen={last_seen}"
+                )
                 import time
+
                 age_seconds = time.time() - last_seen if last_seen > 0 else 999999
-                
+
                 # Color: green < 5min, yellow < 1hr, red > 1hr
                 if age_seconds < 300:  # 5 minutes
                     color = "green"
@@ -1443,19 +1718,21 @@ class MeshTUI(App):
                     color = "yellow"
                 else:
                     color = "red"
-                
+
                 # Format display with unread indicator and freshness
                 type_icon = "🏠" if contact_type == 3 else ""  # Room server icon
                 if unread > 0:
-                    display_text = f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
+                    display_text = (
+                        f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
+                    )
                 else:
                     display_text = f"[{color}]○[/{color}] {type_icon}{contact_name}"
-                
+
                 # Create ListItem with sanitized contact name as id for data retrieval
                 contact_id = f"contact-{sanitize_id(contact_name)}"
                 self._contact_id_map[contact_id] = contact_name  # Store mapping
                 list_item = ListItem(Static(display_text, markup=True), id=contact_id)
-                    
+
                 self.contacts_list.append(list_item)
                 self.logger.debug(f"Added contact to UI: {contact_name}")
 
@@ -1472,7 +1749,6 @@ class MeshTUI(App):
 
     async def update_channels(self) -> None:
         """Update the channels list in the UI."""
-        import asyncio
 
         try:
             self.logger.debug("Starting channel update process...")
@@ -1482,7 +1758,7 @@ class MeshTUI(App):
             # Clear and repopulate channels list
             self.channels_list.clear()
             self._channel_id_map.clear()  # Clear the mapping
-            
+
             # Always add "Public" as first item with unread count
             public_unread = self.connection.get_unread_count("Public")
             if public_unread > 0:
@@ -1492,28 +1768,34 @@ class MeshTUI(App):
             public_id = "channel-Public"
             self._channel_id_map[public_id] = "Public"
             self.channels_list.append(ListItem(Static(public_display), id=public_id))
-            
+
             # Add other channels (channels is a list, not dict)
             for channel_info in channels:
-                channel_name = channel_info.get('name', 'Unknown')
-                channel_idx = channel_info.get('channel_idx', 0)
+                channel_name = channel_info.get("name", "Unknown")
+                channel_idx = channel_info.get("channel_idx", 0)
                 if channel_name and channel_name != "Public":
                     # Store channel with index for proper message filtering
                     channel_key = f"Channel {channel_idx}"
                     channel_unread = self.connection.get_unread_count(channel_key)
-                    
+
                     if channel_unread > 0:
                         display_text = f"{channel_name} ({channel_unread})"
                     else:
                         display_text = channel_name
-                    
+
                     channel_id = f"channel-{sanitize_id(channel_name)}"
                     # Store the "Channel X" format for database queries
                     self._channel_id_map[channel_id] = channel_key
-                    self.channels_list.append(ListItem(Static(display_text), id=channel_id))
-                    self.logger.debug(f"Added channel to UI: {channel_name} (index {channel_idx})")
+                    self.channels_list.append(
+                        ListItem(Static(display_text), id=channel_id)
+                    )
+                    self.logger.debug(
+                        f"Added channel to UI: {channel_name} (index {channel_idx})"
+                    )
 
-            self.logger.info(f"Updated {len(channels) + 1} channels in UI (including Public)")
+            self.logger.info(
+                f"Updated {len(channels) + 1} channels in UI (including Public)"
+            )
         except Exception as e:
             self.logger.error(f"Failed to update channels: {e}")
             import traceback
@@ -1526,29 +1808,38 @@ class MeshTUI(App):
 
         try:
             self.logger.debug("Refreshing messages...")
-            
+
             # Clear the chat area
             self.chat_area.clear()
-            
+
             # Get filtered messages based on current view
             if self.current_contact:
-                messages = self.connection.get_messages_for_contact(self.current_contact)
-                self.logger.debug(f"Retrieved {len(messages)} messages for contact {self.current_contact}")
+                messages = self.connection.get_messages_for_contact(
+                    self.current_contact
+                )
+                self.logger.debug(
+                    f"Retrieved {len(messages)} messages for contact {self.current_contact}"
+                )
             elif self.current_channel is not None:
                 messages = self.connection.get_messages_for_channel(
-                    self.current_channel if isinstance(self.current_channel, str) else "Public"
+                    self.current_channel
+                    if isinstance(self.current_channel, str)
+                    else "Public"
                 )
-                self.logger.debug(f"Retrieved {len(messages)} messages for channel {self.current_channel}")
+                self.logger.debug(
+                    f"Retrieved {len(messages)} messages for channel {self.current_channel}"
+                )
             else:
                 # No view selected, show nothing
                 messages = []
                 self.logger.debug("No contact or channel selected")
-            
+
             # Display messages
             from datetime import datetime
+
             for msg in messages:
                 # Format timestamp
-                timestamp = msg.get('timestamp', 0)
+                timestamp = msg.get("timestamp", 0)
                 if timestamp and timestamp > 0:
                     try:
                         if isinstance(timestamp, str):
@@ -1557,87 +1848,118 @@ class MeshTUI(App):
                             dt = datetime.fromtimestamp(timestamp)
                         time_str = dt.strftime("%H:%M:%S")
                     except Exception as e:
-                        self.logger.error(f"Failed to format timestamp {timestamp}: {e}")
+                        self.logger.error(
+                            f"Failed to format timestamp {timestamp}: {e}"
+                        )
                         time_str = str(timestamp)
                 else:
                     time_str = "--:--:--"
-                
+
                 sender = msg.get("sender", "Unknown")
                 sender_pubkey = msg.get("sender_pubkey", "")
                 content = msg.get("text", "")
                 msg_type = msg.get("type", "contact")
                 actual_sender = msg.get("actual_sender")  # For room messages
                 actual_sender_pubkey = msg.get("actual_sender_pubkey", "")
-                signature = msg.get('signature', '')
-                
+                signature = msg.get("signature", "")
+
                 # Check if this message is from me by comparing pubkeys
                 is_from_me = False
-                my_contact = self.connection.db.get_contact_by_me() if self.connection else None
+                my_contact = (
+                    self.connection.db.get_contact_by_me() if self.connection else None
+                )
                 if my_contact:
-                    my_pubkey = my_contact.get('pubkey')
+                    my_pubkey = my_contact.get("pubkey")
                     if my_pubkey:
                         # Check if any of the sender fields match our pubkey (prefix or full)
-                        if sender_pubkey and (sender_pubkey == my_pubkey or my_pubkey.startswith(sender_pubkey)):
+                        if sender_pubkey and (
+                            sender_pubkey == my_pubkey
+                            or my_pubkey.startswith(sender_pubkey)
+                        ):
                             is_from_me = True
-                        elif actual_sender_pubkey and (actual_sender_pubkey == my_pubkey or my_pubkey.startswith(actual_sender_pubkey)):
+                        elif actual_sender_pubkey and (
+                            actual_sender_pubkey == my_pubkey
+                            or my_pubkey.startswith(actual_sender_pubkey)
+                        ):
                             is_from_me = True
-                        elif signature and (signature == my_pubkey or my_pubkey.startswith(signature)):
+                        elif signature and (
+                            signature == my_pubkey or my_pubkey.startswith(signature)
+                        ):
                             is_from_me = True
                 elif sender == "Me":
                     is_from_me = True
-                
+
                 # Check if sender is a room server (type 3)
                 sender_contact = self.connection.get_contact_by_name(sender)
-                is_room_server = sender_contact and sender_contact.get('type') == 3
-                
+                is_room_server = sender_contact and sender_contact.get("type") == 3
+
                 # If no actual_sender but we have a signature, try to decode it
                 if is_room_server and not actual_sender and signature:
-                    sig_contact = self.connection.contacts.get_by_key(signature) if self.connection.contacts else None
+                    sig_contact = (
+                        self.connection.contacts.get_by_key(signature)
+                        if self.connection.contacts
+                        else None
+                    )
                     if sig_contact:
-                        actual_sender = sig_contact.get('adv_name') or sig_contact.get('name', signature)
+                        actual_sender = sig_contact.get("adv_name") or sig_contact.get(
+                            "name", signature
+                        )
                     else:
                         actual_sender = signature[:8]  # Show short key if unknown
-                
+
                 # Format sender display with timestamps
                 if is_from_me:
                     # Message sent by me (based on pubkey) - always show as "You"
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [blue]You:[/blue] {content}\n")
+                    self.chat_area.write(
+                        f"[dim]{time_str}[/dim] [blue]You:[/blue] {content}\n"
+                    )
                 elif (msg_type == "room" or is_room_server) and actual_sender:
                     display_sender = f"{sender} / {actual_sender}"
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {content}\n")
+                    self.chat_area.write(
+                        f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {content}\n"
+                    )
                 elif msg_type == "room" or is_room_server:
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/dim] {content}\n")
+                    self.chat_area.write(
+                        f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/dim] {content}\n"
+                    )
                 elif self.current_contact and sender == self.current_contact:
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n")
+                    self.chat_area.write(
+                        f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n"
+                    )
                 elif msg_type == "channel":
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [yellow]{sender}:[/yellow] {content}\n")
+                    self.chat_area.write(
+                        f"[dim]{time_str}[/dim] [yellow]{sender}:[/yellow] {content}\n"
+                    )
                 else:
                     # Show actual sender name (could be someone else in a room conversation)
-                    self.chat_area.write(f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n")
-                
+                    self.chat_area.write(
+                        f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n"
+                    )
+
         except asyncio.TimeoutError:
             self.logger.error("Timeout refreshing messages")
         except Exception as e:
             self.logger.error(f"Failed to refresh messages: {e}")
             import traceback
+
             self.logger.debug(f"Message refresh traceback: {traceback.format_exc()}")
-    
+
     async def periodic_message_refresh(self) -> None:
         """Periodically check for and display new messages."""
         if not self.connection.is_connected():
             return
-        
+
         try:
             # Track the number of messages we've already displayed
-            if not hasattr(self, '_displayed_message_count'):
+            if not hasattr(self, "_displayed_message_count"):
                 self._displayed_message_count = 0
-            
+
             # Get all messages
             all_messages = await self.connection.get_messages()
-            
+
             # Only display new messages
-            new_messages = all_messages[self._displayed_message_count:]
-            
+            new_messages = all_messages[self._displayed_message_count :]
+
             for msg in new_messages:
                 sender = msg.get("sender", "Unknown")
                 content = msg.get("text", "")
@@ -1646,15 +1968,20 @@ class MeshTUI(App):
                 # Filter based on current view
                 if self.current_contact:
                     # Show messages from/to this contact (including room messages)
-                    if (msg_type == "contact" or msg_type == "room") and sender == self.current_contact:
+                    if (
+                        msg_type == "contact" or msg_type == "room"
+                    ) and sender == self.current_contact:
                         self.chat_area.write(f"[green]{sender}:[/green] {content}\n")
                 elif self.current_channel is not None:
                     # Show messages from this channel
-                    if msg_type == "channel" and msg.get("channel") == self.current_channel:
+                    if (
+                        msg_type == "channel"
+                        and msg.get("channel") == self.current_channel
+                    ):
                         self.chat_area.write(f"[cyan]{sender}:[/cyan] {content}\n")
-            
+
             self._displayed_message_count = len(all_messages)
-                
+
         except Exception as e:
             self.logger.debug(f"Periodic refresh error: {e}")
 
@@ -1665,7 +1992,9 @@ class MeshTUI(App):
         password = self.node_password_input.value.strip()
 
         if not node_name or not password:
-            self.node_status_area.write("Please enter both repeater name and password\n")
+            self.node_status_area.write(
+                "Please enter both repeater name and password\n"
+            )
             return
 
         self.logger.info(f"Logging into repeater: {node_name}")
@@ -1690,9 +2019,11 @@ class MeshTUI(App):
         if not command:
             self.node_status_area.write("Please enter a command\n")
             return
-            
+
         if not node_name:
-            self.node_status_area.write("Please specify target node name or select a contact in Chat tab\n")
+            self.node_status_area.write(
+                "Please specify target node name or select a contact in Chat tab\n"
+            )
             return
 
         self.logger.info(f"Sending command to {node_name}: {command}")
@@ -1703,17 +2034,17 @@ class MeshTUI(App):
             self.node_command_input.value = ""
         else:
             self.node_status_area.write(f"✗ Failed to send command to {node_name}\n")
-    
+
     @on(Input.Submitted, "#node-command-input")
     async def node_command_submitted(self, event: Input.Submitted) -> None:
         """Handle Enter key in command input - same as clicking Send button."""
         # Prevent default behavior
         event.prevent_default()
-        
+
         self.logger.info("🔍 DEBUG: node-command-input submitted!")
         command = self.node_command_input.value.strip()
         node_name = self.node_cmd_target_input.value.strip()
-        
+
         self.logger.info(f"🔍 DEBUG: command='{command}', node_name='{node_name}'")
 
         # If no node name specified, use current contact from chat
@@ -1723,9 +2054,11 @@ class MeshTUI(App):
         if not command:
             self.node_status_area.write("Please enter a command\n")
             return
-            
+
         if not node_name:
-            self.node_status_area.write("Please specify target node name or select a contact in Chat tab\n")
+            self.node_status_area.write(
+                "Please specify target node name or select a contact in Chat tab\n"
+            )
             return
 
         self.logger.info(f"Sending command to {node_name}: {command}")
@@ -1751,6 +2084,7 @@ class MeshTUI(App):
 
         if status:
             import json
+
             status_json = json.dumps(status, indent=2)
             self.node_status_area.write(f"Status from {node_name}:\n{status_json}\n\n")
         else:
@@ -1762,7 +2096,9 @@ class MeshTUI(App):
         """Populate device settings with current values from connected device."""
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("Not connected to device. Settings unavailable.")
+                self.settings_status_area.write(
+                    "Not connected to device. Settings unavailable."
+                )
                 return
 
             self.settings_status_area.write("Loading current device settings...")
@@ -1770,26 +2106,40 @@ class MeshTUI(App):
             # Get device info using appstart command (includes more details than device_query)
             result = await self.connection.meshcore.commands.send_appstart()
 
-            if hasattr(result, 'payload') and result.payload:
+            if hasattr(result, "payload") and result.payload:
                 info = result.payload
 
                 # Display device name (if available)
-                device_name = info.get('name', info.get('long_name', ''))
+                device_name = info.get("name", info.get("long_name", ""))
                 if device_name:
                     self.settings_name_input.placeholder = f"Current: {device_name}"
 
                 # Display model and version info
-                model = self.connection.device_info.get('model', 'Unknown') if self.connection.device_info else 'Unknown'
-                version = self.connection.device_info.get('ver', 'Unknown') if self.connection.device_info else 'Unknown'
+                model = (
+                    self.connection.device_info.get("model", "Unknown")
+                    if self.connection.device_info
+                    else "Unknown"
+                )
+                version = (
+                    self.connection.device_info.get("ver", "Unknown")
+                    if self.connection.device_info
+                    else "Unknown"
+                )
 
-                self.settings_status_area.write(f"[green]Device: {model} ({version})[/green]")
+                self.settings_status_area.write(
+                    f"[green]Device: {model} ({version})[/green]"
+                )
 
                 # Note: Radio parameters (freq, bw, sf, cr) and TX power are not returned by appstart
                 # They would need separate commands to query, which MeshCore may not expose
-                self.settings_status_area.write("[dim]Note: Enter new values to update radio settings[/dim]")
+                self.settings_status_area.write(
+                    "[dim]Note: Enter new values to update radio settings[/dim]"
+                )
 
             else:
-                self.settings_status_area.write("[yellow]Could not retrieve device settings[/yellow]")
+                self.settings_status_area.write(
+                    "[yellow]Could not retrieve device settings[/yellow]"
+                )
 
         except Exception as e:
             self.logger.error(f"Error loading device settings: {e}")
@@ -1807,21 +2157,29 @@ class MeshTUI(App):
         """Set the device name."""
         name = self.settings_name_input.value.strip()
         if not name:
-            self.settings_status_area.write("[red]Error: Device name cannot be empty[/red]")
+            self.settings_status_area.write(
+                "[red]Error: Device name cannot be empty[/red]"
+            )
             return
 
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                self.settings_status_area.write(
+                    "[red]Error: Not connected to device[/red]"
+                )
                 return
 
             self.settings_status_area.write(f"Setting device name to: {name}")
             result = await self.connection.meshcore.commands.set_name(name)
 
-            if hasattr(result, 'type') and 'ERROR' in str(result.type):
-                self.settings_status_area.write(f"[red]✗ Failed to set name: {result}[/red]")
+            if hasattr(result, "type") and "ERROR" in str(result.type):
+                self.settings_status_area.write(
+                    f"[red]✗ Failed to set name: {result}[/red]"
+                )
             else:
-                self.settings_status_area.write(f"[green]✓ Device name set to: {name}[/green]")
+                self.settings_status_area.write(
+                    f"[green]✓ Device name set to: {name}[/green]"
+                )
                 self.settings_name_input.value = ""
         except Exception as e:
             self.logger.error(f"Error setting device name: {e}")
@@ -1833,21 +2191,29 @@ class MeshTUI(App):
         try:
             power = int(self.settings_tx_power_input.value.strip())
         except ValueError:
-            self.settings_status_area.write("[red]Error: TX power must be a number[/red]")
+            self.settings_status_area.write(
+                "[red]Error: TX power must be a number[/red]"
+            )
             return
 
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                self.settings_status_area.write(
+                    "[red]Error: Not connected to device[/red]"
+                )
                 return
 
             self.settings_status_area.write(f"Setting TX power to: {power} dBm")
             result = await self.connection.meshcore.commands.set_tx_power(power)
 
-            if hasattr(result, 'type') and 'ERROR' in str(result.type):
-                self.settings_status_area.write(f"[red]✗ Failed to set TX power: {result}[/red]")
+            if hasattr(result, "type") and "ERROR" in str(result.type):
+                self.settings_status_area.write(
+                    f"[red]✗ Failed to set TX power: {result}[/red]"
+                )
             else:
-                self.settings_status_area.write(f"[green]✓ TX power set to: {power} dBm[/green]")
+                self.settings_status_area.write(
+                    f"[green]✓ TX power set to: {power} dBm[/green]"
+                )
                 self.settings_tx_power_input.value = ""
         except Exception as e:
             self.logger.error(f"Error setting TX power: {e}")
@@ -1862,21 +2228,31 @@ class MeshTUI(App):
             sf = int(self.settings_sf_input.value.strip())
             cr = int(self.settings_cr_input.value.strip())
         except ValueError:
-            self.settings_status_area.write("[red]Error: All radio parameters must be numbers[/red]")
+            self.settings_status_area.write(
+                "[red]Error: All radio parameters must be numbers[/red]"
+            )
             return
 
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                self.settings_status_area.write(
+                    "[red]Error: Not connected to device[/red]"
+                )
                 return
 
-            self.settings_status_area.write(f"Setting radio: freq={freq}MHz, bw={bw}kHz, sf={sf}, cr={cr}")
+            self.settings_status_area.write(
+                f"Setting radio: freq={freq}MHz, bw={bw}kHz, sf={sf}, cr={cr}"
+            )
             result = await self.connection.meshcore.commands.set_radio(freq, bw, sf, cr)
 
-            if hasattr(result, 'type') and 'ERROR' in str(result.type):
-                self.settings_status_area.write(f"[red]✗ Failed to set radio config: {result}[/red]")
+            if hasattr(result, "type") and "ERROR" in str(result.type):
+                self.settings_status_area.write(
+                    f"[red]✗ Failed to set radio config: {result}[/red]"
+                )
             else:
-                self.settings_status_area.write(f"[green]✓ Radio configured successfully[/green]")
+                self.settings_status_area.write(
+                    "[green]✓ Radio configured successfully[/green]"
+                )
                 self.settings_freq_input.value = ""
                 self.settings_bw_input.value = ""
                 self.settings_sf_input.value = ""
@@ -1892,21 +2268,31 @@ class MeshTUI(App):
             lat = float(self.settings_lat_input.value.strip())
             lon = float(self.settings_lon_input.value.strip())
         except ValueError:
-            self.settings_status_area.write("[red]Error: Latitude and longitude must be numbers[/red]")
+            self.settings_status_area.write(
+                "[red]Error: Latitude and longitude must be numbers[/red]"
+            )
             return
 
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                self.settings_status_area.write(
+                    "[red]Error: Not connected to device[/red]"
+                )
                 return
 
-            self.settings_status_area.write(f"Setting coordinates: lat={lat}, lon={lon}")
+            self.settings_status_area.write(
+                f"Setting coordinates: lat={lat}, lon={lon}"
+            )
             result = await self.connection.meshcore.commands.set_coords(lat, lon)
 
-            if hasattr(result, 'type') and 'ERROR' in str(result.type):
-                self.settings_status_area.write(f"[red]✗ Failed to set coordinates: {result}[/red]")
+            if hasattr(result, "type") and "ERROR" in str(result.type):
+                self.settings_status_area.write(
+                    f"[red]✗ Failed to set coordinates: {result}[/red]"
+                )
             else:
-                self.settings_status_area.write(f"[green]✓ Coordinates set successfully[/green]")
+                self.settings_status_area.write(
+                    "[green]✓ Coordinates set successfully[/green]"
+                )
                 self.settings_lat_input.value = ""
                 self.settings_lon_input.value = ""
         except Exception as e:
@@ -1918,13 +2304,17 @@ class MeshTUI(App):
         """Reboot the connected device."""
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                self.settings_status_area.write(
+                    "[red]Error: Not connected to device[/red]"
+                )
                 return
 
             self.settings_status_area.write("[yellow]⚠ Rebooting device...[/yellow]")
-            result = await self.connection.meshcore.commands.reboot()
+            await self.connection.meshcore.commands.reboot()
 
-            self.settings_status_area.write("[green]✓ Reboot command sent. Device will reconnect shortly.[/green]")
+            self.settings_status_area.write(
+                "[green]✓ Reboot command sent. Device will reconnect shortly.[/green]"
+            )
         except Exception as e:
             self.logger.error(f"Error rebooting device: {e}")
             self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
@@ -1934,21 +2324,29 @@ class MeshTUI(App):
         """Get battery information."""
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                self.settings_status_area.write(
+                    "[red]Error: Not connected to device[/red]"
+                )
                 return
 
             self.settings_status_area.write("Getting battery info...")
             result = await self.connection.meshcore.commands.get_bat()
 
-            if hasattr(result, 'type') and 'ERROR' in str(result.type):
-                self.settings_status_area.write(f"[red]✗ Failed to get battery info: {result}[/red]")
-            elif hasattr(result, 'payload'):
+            if hasattr(result, "type") and "ERROR" in str(result.type):
+                self.settings_status_area.write(
+                    f"[red]✗ Failed to get battery info: {result}[/red]"
+                )
+            elif hasattr(result, "payload"):
                 bat_info = result.payload
-                voltage = bat_info.get('voltage', 'N/A')
-                percent = bat_info.get('percent', 'N/A')
-                self.settings_status_area.write(f"[green]Battery: {voltage}V ({percent}%)[/green]")
+                voltage = bat_info.get("voltage", "N/A")
+                percent = bat_info.get("percent", "N/A")
+                self.settings_status_area.write(
+                    f"[green]Battery: {voltage}V ({percent}%)[/green]"
+                )
             else:
-                self.settings_status_area.write(f"[yellow]Battery info: {result}[/yellow]")
+                self.settings_status_area.write(
+                    f"[yellow]Battery info: {result}[/yellow]"
+                )
         except Exception as e:
             self.logger.error(f"Error getting battery info: {e}")
             self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
@@ -1958,18 +2356,25 @@ class MeshTUI(App):
         """Sync device time to current system time."""
         try:
             if not self.connection.is_connected():
-                self.settings_status_area.write("[red]Error: Not connected to device[/red]")
+                self.settings_status_area.write(
+                    "[red]Error: Not connected to device[/red]"
+                )
                 return
 
             import time
+
             current_time = int(time.time())
             self.settings_status_area.write(f"Setting device time to: {current_time}")
             result = await self.connection.meshcore.commands.set_time(current_time)
 
-            if hasattr(result, 'type') and 'ERROR' in str(result.type):
-                self.settings_status_area.write(f"[red]✗ Failed to set time: {result}[/red]")
+            if hasattr(result, "type") and "ERROR" in str(result.type):
+                self.settings_status_area.write(
+                    f"[red]✗ Failed to set time: {result}[/red]"
+                )
             else:
-                self.settings_status_area.write(f"[green]✓ Device time synchronized[/green]")
+                self.settings_status_area.write(
+                    "[green]✓ Device time synchronized[/green]"
+                )
         except Exception as e:
             self.logger.error(f"Error syncing time: {e}")
             self.settings_status_area.write(f"[red]✗ Error: {e}[/red]")
@@ -1982,13 +2387,13 @@ class MeshTUI(App):
             self.logger.info("Connection closed successfully")
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
-    
+
     def action_quit(self) -> None:
         """Override quit action to ensure proper cleanup."""
         self.logger.info("Quit action triggered")
         # Textual will call on_unmount automatically
         self.exit()
-    
+
     def action_show_help(self) -> None:
         """Show help modal."""
         help_text = """
@@ -2044,22 +2449,22 @@ class MeshTUI(App):
 
 For more information, see README.md
         """
-        
+
         from textual.widgets import Label
         from textual.containers import VerticalScroll
         from textual.screen import ModalScreen
-        
+
         class HelpScreen(ModalScreen):
             """Help modal screen."""
-            
+
             def compose(self):
                 with VerticalScroll():
                     yield Label(help_text, markup=True)
-            
+
             def on_key(self, event):
                 """Close on any key press."""
                 self.dismiss()
-        
+
         self.push_screen(HelpScreen())
 
 
@@ -2073,7 +2478,6 @@ def main():
         root_logger.removeHandler(handler)
 
     # Add file logging for postmortem analysis (DEBUG+)
-    from pathlib import Path
 
     log_dir = Path.home() / ".config" / "meshtui"
     log_dir.mkdir(parents=True, exist_ok=True)

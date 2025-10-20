@@ -7,7 +7,7 @@ Handles BLE, Serial, and TCP connections.
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from enum import Enum
 
 import serial.tools.list_ports
@@ -17,6 +17,7 @@ from meshcore import MeshCore, EventType
 
 class ConnectionType(Enum):
     """Types of connections supported."""
+
     BLE = "ble"
     TCP = "tcp"
     SERIAL = "serial"
@@ -24,11 +25,13 @@ class ConnectionType(Enum):
 
 class SerialTransport:
     """Handles serial port connections to MeshCore devices."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger("meshtui.transport.serial")
-    
-    async def identify_device(self, device_path: str, timeout: float = 5.0, retries: int = 2) -> bool:
+
+    async def identify_device(
+        self, device_path: str, timeout: float = 5.0, retries: int = 2
+    ) -> bool:
         """Identify if a serial device is a MeshCore device.
 
         Args:
@@ -47,7 +50,9 @@ class SerialTransport:
                     # Wait a bit between retries to let serial port settle
                     await asyncio.sleep(0.5)
 
-                self.logger.debug(f"Testing if {device_path} is a MeshCore device (attempt {attempt + 1}/{retries})...")
+                self.logger.debug(
+                    f"Testing if {device_path} is a MeshCore device (attempt {attempt + 1}/{retries})..."
+                )
 
                 # Create a temporary connection to test
                 temp_mc = await MeshCore.create_serial(
@@ -64,7 +69,9 @@ class SerialTransport:
 
                 # Check if we got valid device info
                 if result.type == EventType.ERROR:
-                    self.logger.debug(f"{device_path} returned error on query (attempt {attempt + 1}/{retries})")
+                    self.logger.debug(
+                        f"{device_path} returned error on query (attempt {attempt + 1}/{retries})"
+                    )
                     await temp_mc.disconnect()
                     # Give asyncio time to clean up tasks
                     await asyncio.sleep(0.1)
@@ -82,7 +89,9 @@ class SerialTransport:
                     await asyncio.sleep(0.1)
                     return True
                 else:
-                    self.logger.debug(f"{device_path} responded but lacks MeshCore identification")
+                    self.logger.debug(
+                        f"{device_path} responded but lacks MeshCore identification"
+                    )
                     await temp_mc.disconnect()
                     # Give asyncio time to clean up tasks
                     await asyncio.sleep(0.1)
@@ -90,7 +99,9 @@ class SerialTransport:
                     continue  # Try again
 
             except asyncio.TimeoutError:
-                self.logger.debug(f"Timeout identifying {device_path} (attempt {attempt + 1}/{retries})")
+                self.logger.debug(
+                    f"Timeout identifying {device_path} (attempt {attempt + 1}/{retries})"
+                )
                 if temp_mc:
                     try:
                         await temp_mc.disconnect()
@@ -100,7 +111,9 @@ class SerialTransport:
                         pass
                 continue  # Try again
             except Exception as e:
-                self.logger.debug(f"Failed to identify {device_path} (attempt {attempt + 1}/{retries}): {e}")
+                self.logger.debug(
+                    f"Failed to identify {device_path} (attempt {attempt + 1}/{retries}): {e}"
+                )
                 if temp_mc:
                     try:
                         await temp_mc.disconnect()
@@ -111,12 +124,14 @@ class SerialTransport:
                 continue  # Try again
 
         # All retries failed
-        self.logger.debug(f"✗ {device_path} is not a MeshCore device after {retries} attempts")
+        self.logger.debug(
+            f"✗ {device_path} is not a MeshCore device after {retries} attempts"
+        )
         return False
 
     async def list_ports(self) -> List[Dict[str, str]]:
         """List all available serial ports.
-        
+
         Returns:
             List of port information dictionaries
         """
@@ -124,11 +139,13 @@ class SerialTransport:
             ports = serial.tools.list_ports.comports()
             port_list = []
             for port in ports:
-                port_list.append({
-                    "device": port.device,
-                    "description": port.description,
-                    "hwid": port.hwid if hasattr(port, "hwid") else "Unknown",
-                })
+                port_list.append(
+                    {
+                        "device": port.device,
+                        "description": port.description,
+                        "hwid": port.hwid if hasattr(port, "hwid") else "Unknown",
+                    }
+                )
             self.logger.info(f"Found {len(port_list)} serial ports")
             return port_list
         except Exception as e:
@@ -137,11 +154,11 @@ class SerialTransport:
 
     async def connect(self, port: str, baudrate: int = 115200) -> Optional[MeshCore]:
         """Connect to a MeshCore device via serial port.
-        
+
         Args:
             port: Serial port path
             baudrate: Connection baudrate
-            
+
         Returns:
             MeshCore instance if successful, None otherwise
         """
@@ -168,18 +185,18 @@ class SerialTransport:
 
 class BLETransport:
     """Handles BLE connections to MeshCore devices."""
-    
+
     def __init__(self, config_dir: Path):
         self.logger = logging.getLogger("meshtui.transport.ble")
         self.config_dir = config_dir
         self.address_file = config_dir / "default_address"
-    
+
     async def scan_devices(self, timeout: float = 5.0) -> List[Dict[str, Any]]:
         """Scan for available BLE MeshCore devices.
-        
+
         Args:
             timeout: Scan timeout in seconds
-            
+
         Returns:
             List of discovered device information
         """
@@ -190,11 +207,13 @@ class BLETransport:
             meshcore_devices = []
             for device in devices:
                 if device.name and "meshcore" in device.name.lower():
-                    meshcore_devices.append({
-                        "name": device.name,
-                        "address": device.address,
-                        "rssi": getattr(device, "rssi", "Unknown"),
-                    })
+                    meshcore_devices.append(
+                        {
+                            "name": device.name,
+                            "address": device.address,
+                            "rssi": getattr(device, "rssi", "Unknown"),
+                        }
+                    )
 
             self.logger.info(f"Found {len(meshcore_devices)} MeshCore BLE devices")
             return meshcore_devices
@@ -205,7 +224,7 @@ class BLETransport:
 
     def get_saved_address(self) -> Optional[str]:
         """Get the last used BLE address from config file.
-        
+
         Returns:
             Saved BLE address or None
         """
@@ -221,7 +240,7 @@ class BLETransport:
 
     def save_address(self, address: str) -> None:
         """Save BLE address to config file.
-        
+
         Args:
             address: BLE address to save
         """
@@ -232,13 +251,15 @@ class BLETransport:
         except Exception as e:
             self.logger.error(f"Could not save address: {e}")
 
-    async def connect(self, address: Optional[str] = None, pin: Optional[str] = None) -> Optional[MeshCore]:
+    async def connect(
+        self, address: Optional[str] = None, pin: Optional[str] = None
+    ) -> Optional[MeshCore]:
         """Connect to a MeshCore device via BLE.
-        
+
         Args:
             address: BLE address (if None, uses saved or scans)
             pin: Optional PIN for pairing
-            
+
         Returns:
             MeshCore instance if successful, None otherwise
         """
@@ -246,7 +267,7 @@ class BLETransport:
             # Use saved address if none provided
             if not address:
                 address = self.get_saved_address()
-            
+
             # Scan if still no address
             if not address:
                 self.logger.info("No address provided, scanning...")
@@ -284,17 +305,17 @@ class BLETransport:
 
 class TCPTransport:
     """Handles TCP/IP connections to MeshCore devices."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger("meshtui.transport.tcp")
-    
+
     async def connect(self, hostname: str, port: int = 5000) -> Optional[MeshCore]:
         """Connect to a MeshCore device via TCP.
-        
+
         Args:
             hostname: Hostname or IP address
             port: TCP port number
-            
+
         Returns:
             MeshCore instance if successful, None otherwise
         """
