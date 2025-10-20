@@ -13,6 +13,7 @@ from typing import Optional
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.events import Click
 from textual.widgets import (
     Button,
     Footer,
@@ -30,6 +31,15 @@ from textual.widgets import (
 from textual.binding import Binding
 
 from .connection import MeshConnection
+
+
+class InstantButton(Button):
+    """Button that activates on first click without requiring focus."""
+    
+    async def _on_click(self, event: Click) -> None:
+        """Handle click event to activate immediately."""
+        event.stop()
+        self.press()
 
 
 def sanitize_id(name: str) -> str:
@@ -125,9 +135,10 @@ class MeshTUI(App):
                     yield Button("+", id="create-channel-btn", variant="success")
                 yield ListView(id="channels-list")
                 
-                yield Button("Scan BLE Devices", id="scan-ble-btn", variant="primary")
-                yield Button("Send Advert (0-hop)", id="advert-0hop-btn", variant="primary")
-                yield Button("Send Advert (Flood)", id="advert-flood-btn", variant="default")
+                # Instant-click buttons for sidebar
+                yield InstantButton("Scan BLE Devices", id="scan-ble-btn", variant="primary")
+                yield InstantButton("Send Advert (0-hop)", id="advert-0hop-btn", variant="primary")
+                yield InstantButton("Send Advert (Flood)", id="advert-flood-btn", variant="default")
 
             # Main content area with tabs
             with Vertical(id="main-content"):
@@ -790,6 +801,11 @@ class MeshTUI(App):
         
         self.push_screen(CreateChannelScreen())
     
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button clicks to trigger immediately without requiring focus first."""
+        # This allows single-click activation of buttons even when they don't have focus
+        pass
+    
     @on(Button.Pressed, "#scan-ble-btn")
     async def show_ble_scanner(self) -> None:
         """Show BLE device scanner dialog."""
@@ -820,8 +836,8 @@ class MeshTUI(App):
                         yield Button("Rescan", id="rescan-btn", variant="primary")
                         yield Button("Close", id="close-scan-btn", variant="default")
             
-            async def on_mount(self):
-                """Start scanning on mount and load saved address."""
+            def on_mount(self):
+                """Load saved address and schedule background scan."""
                 # Try to load saved BLE address
                 saved_address = self.app.connection.ble_transport.get_saved_address()
                 if saved_address:
@@ -831,7 +847,8 @@ class MeshTUI(App):
                         f"Last connected: {saved_address}. Click Connect or Rescan."
                     )
                 else:
-                    await self.scan_devices()
+                    # Schedule scan in background so dialog shows immediately
+                    self.call_later(self.scan_devices)
             
             async def scan_devices(self):
                 """Scan for BLE devices and populate list."""

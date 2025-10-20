@@ -81,6 +81,15 @@ Header {
     margin: 1 1 0 1;
 }
 
+/* Instant click buttons - activate on first click without requiring focus */
+Button.instant-click {
+    padding: 0 2;
+}
+
+Button.instant-click:hover {
+    background: $accent;
+}
+
 #main-content {
     width: 75%;
     height: 100%;
