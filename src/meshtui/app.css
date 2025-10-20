@@ -145,19 +145,19 @@ RichLog {
 }
 
 #ping-btn {
-    width: 10;
+    width: 8;
     height: 3;
     margin: 1 0 1 0;
 }
 
 #delete-contact-btn {
-    width: 18;
+    width: 12;
     height: 3;
     margin: 1 0 1 0;
 }
 
 #send-btn {
-    width: 12;
+    width: 8;
     height: 3;
     margin: 1 1 1 0;
 }
@@ -364,6 +364,30 @@ TextArea:focus {
     padding: 2;
     width: 60;
     height: auto;
+}
+
+/* BLE Scanner Dialog */
+#ble-scanner-dialog {
+    background: $panel;
+    border: solid $accent;
+    padding: 2;
+    width: 60;
+    height: 30;
+    max-height: 90%;
+    overflow-y: auto;
+}
+
+#ble-devices-list {
+    height: 8;
+    min-height: 5;
+    background: $surface;
+    border: solid $primary;
+    margin: 1 0;
+}
+
+#scan-status {
+    margin: 1 0;
+    color: $text-muted;
 }
 
 #dialog-buttons {

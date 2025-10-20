@@ -12,7 +12,7 @@ from typing import Optional
 
 from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
     Footer,
@@ -125,6 +125,7 @@ class MeshTUI(App):
                     yield Button("+", id="create-channel-btn", variant="success")
                 yield ListView(id="channels-list")
                 
+                yield Button("Scan BLE Devices", id="scan-ble-btn", variant="primary")
                 yield Button("Send Advert (0-hop)", id="advert-0hop-btn", variant="primary")
                 yield Button("Send Advert (Flood)", id="advert-flood-btn", variant="default")
 
@@ -787,6 +788,177 @@ class MeshTUI(App):
                 self.dismiss()
         
         self.push_screen(CreateChannelScreen())
+    
+    @on(Button.Pressed, "#scan-ble-btn")
+    async def show_ble_scanner(self) -> None:
+        """Show BLE device scanner dialog."""
+        from textual.widgets import Label, LoadingIndicator
+        from textual.containers import Vertical, Horizontal
+        from textual.screen import ModalScreen
+        
+        class BLEScannerScreen(ModalScreen):
+            """Modal for scanning and selecting BLE devices."""
+            
+            def compose(self):
+                with VerticalScroll(id="ble-scanner-dialog"):
+                    yield Static("[bold cyan]BLE Device Connection[/bold cyan]")
+                    yield Static("Scan for new devices or enter address of paired device", classes="help-text")
+                    
+                    yield Label("Known Device Address (if already paired):")
+                    yield Input(placeholder="E1:C7:FD:AB:2B:DB or leave blank to scan", id="ble-address-input")
+                    
+                    yield Static("Or scan for devices:", classes="section-label")
+                    yield Static("Scanning for MeshCore devices...", id="scan-status")
+                    yield ListView(id="ble-devices-list")
+                    
+                    yield Label("BLE PIN:")
+                    yield Static("Required for first connection, optional if already paired", classes="help-text")
+                    yield Input(placeholder="Enter PIN from device screen (or leave blank if paired)", id="ble-pin-input", password=False)
+                    with Horizontal(id="dialog-buttons"):
+                        yield Button("Connect", id="connect-addr-btn", variant="success")
+                        yield Button("Rescan", id="rescan-btn", variant="primary")
+                        yield Button("Close", id="close-scan-btn", variant="default")
+            
+            async def on_mount(self):
+                """Start scanning on mount and load saved address."""
+                # Try to load saved BLE address
+                saved_address = self.app.connection.ble_transport.get_saved_address()
+                if saved_address:
+                    address_input = self.query_one("#ble-address-input", Input)
+                    address_input.value = saved_address
+                    self.query_one("#scan-status", Static).update(
+                        f"Last connected: {saved_address}. Click Connect or Rescan."
+                    )
+                else:
+                    await self.scan_devices()
+            
+            async def scan_devices(self):
+                """Scan for BLE devices and populate list."""
+                status = self.query_one("#scan-status", Static)
+                devices_list = self.query_one("#ble-devices-list", ListView)
+                
+                try:
+                    status.update("Scanning for MeshCore BLE devices... (5s)")
+                    devices_list.clear()
+                    
+                    # Scan for devices using the BLE transport
+                    devices = await self.app.connection.ble_transport.scan_devices(timeout=5.0)
+                    
+                    if devices:
+                        status.update(f"Found {len(devices)} MeshCore device(s). Click to connect:")
+                        for device in devices:
+                            name = device.get('name', 'Unknown')
+                            address = device.get('address', 'Unknown')
+                            rssi = device.get('rssi', 'Unknown')
+                            
+                            # Create a list item with device info
+                            device_text = f"{name}\n  {address} (RSSI: {rssi})"
+                            # Sanitize address for ID (remove colons and special chars)
+                            safe_id = f"ble-{address.replace(':', '-')}"
+                            item = ListItem(Static(device_text), id=safe_id)
+                            item.device_address = address  # Store address for later
+                            devices_list.append(item)
+                    else:
+                        status.update("No MeshCore BLE devices found. Try Rescan.")
+                
+                except Exception as e:
+                    self.app.logger.error(f"Error scanning BLE devices: {e}")
+                    status.update(f"Error scanning: {e}")
+            
+            @on(ListView.Selected, "#ble-devices-list")
+            async def connect_to_device(self, event: ListView.Selected):
+                """Connect to selected BLE device."""
+                if event.item and hasattr(event.item, 'device_address'):
+                    address = event.item.device_address
+                    pin_input = self.query_one("#ble-pin-input", Input)
+                    pin = pin_input.value.strip()
+                    
+                    if not pin:
+                        status = self.query_one("#scan-status", Static)
+                        status.update("[red]Please enter the PIN shown on the device screen[/red]")
+                        return
+                    
+                    self.app.logger.info(f"Connecting to BLE device: {address} with PIN")
+                    
+                    status = self.query_one("#scan-status", Static)
+                    status.update(f"Connecting to {address} with PIN...")
+                    
+                    # Disconnect if already connected
+                    if self.app.connection.is_connected():
+                        await self.app.connection.disconnect()
+                    
+                    # Connect to selected device with PIN
+                    success = await self.app.connection.connect_ble(address=address, pin=pin)
+                    
+                    if success:
+                        self.app.logger.info(f"✓ Connected to {address}")
+                        status.update(f"✓ Connected, discovering nodes...")
+                        # Send advertisement to discover other nodes
+                        await self.app.connection.send_advertisement(hops=3)
+                        # Update UI
+                        await self.app.update_contacts()
+                        await self.app.update_channels()
+                        status.update(f"✓ Connected to {address}")
+                        # Close dialog after successful connection
+                        await asyncio.sleep(1)
+                        self.dismiss()
+                    else:
+                        self.app.logger.error(f"✗ Failed to connect to {address}")
+                        status.update(f"✗ Connection failed. Check PIN and try again.")
+            
+            @on(Button.Pressed, "#rescan-btn")
+            async def rescan(self):
+                """Rescan for BLE devices."""
+                await self.scan_devices()
+            
+            @on(Button.Pressed, "#connect-addr-btn")
+            async def connect_by_address(self):
+                """Connect to a device by address."""
+                address_input = self.query_one("#ble-address-input", Input)
+                pin_input = self.query_one("#ble-pin-input", Input)
+                status = self.query_one("#scan-status", Static)
+                
+                address = address_input.value.strip()
+                pin = pin_input.value.strip() or None  # None if empty
+                
+                if not address:
+                    status.update("[red]Please enter a BLE address or scan for devices[/red]")
+                    return
+                
+                self.app.logger.info(f"Connecting to BLE address: {address}" + (" with PIN" if pin else " (no PIN)"))
+                status.update(f"Connecting to {address}...")
+                
+                # Disconnect if already connected
+                if self.app.connection.is_connected():
+                    await self.app.connection.disconnect()
+                
+                # Connect to specified address
+                success = await self.app.connection.connect_ble(address=address, pin=pin)
+                
+                if success:
+                    self.app.logger.info(f"✓ Connected to {address}")
+                    status.update(f"✓ Connected to {address}")
+                    # Update UI
+                    await self.app.update_contacts()
+                    await self.app.update_channels()
+                    # Close dialog after successful connection
+                    await asyncio.sleep(1)
+                    self.dismiss()
+                else:
+                    self.app.logger.error(f"✗ Failed to connect to {address}")
+                    status.update(f"✗ Connection failed. Check address/PIN and try again.")
+            
+            @on(Button.Pressed, "#close-scan-btn")
+            def close_scanner(self):
+                """Close the scanner dialog."""
+                self.dismiss()
+            
+            def on_key(self, event):
+                """Close dialog on Escape key."""
+                if event.key == "escape":
+                    self.dismiss()
+        
+        self.push_screen(BLEScannerScreen())
 
     @on(Button.Pressed, "#send-btn")
     async def send_message(self) -> None:

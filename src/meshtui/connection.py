@@ -207,9 +207,19 @@ class MeshConnection:
             return []
 
     async def connect_ble(
-        self, address: Optional[str] = None, device=None, timeout: float = 2.0
+        self, address: Optional[str] = None, device=None, pin: Optional[str] = None, timeout: float = 2.0
     ) -> bool:
-        """Connect to a MeshCore device via BLE."""
+        """Connect to a MeshCore device via BLE.
+        
+        Args:
+            address: BLE address to connect to
+            device: BLE device object (alternative to address)
+            pin: PIN for BLE pairing authentication (usually shown on device screen)
+            timeout: Scan timeout if no address provided
+            
+        Returns:
+            True if connected successfully
+        """
         try:
             if not address and not device:
                 # Try to load saved address
@@ -227,10 +237,16 @@ class MeshConnection:
                         self.logger.error("No MeshCore devices found")
                         return False
 
-            self.logger.info(f"Connecting to BLE device: {address}")
-            self.meshcore = await MeshCore.create_ble(
-                address=address, device=device, debug=False, only_error=False
-            )
+            self.logger.info(f"Connecting to BLE device: {address}" + (" with PIN" if pin else ""))
+            try:
+                self.meshcore = await MeshCore.create_ble(
+                    address=address, device=device, pin=pin, debug=False, only_error=False
+                )
+            except Exception as e:
+                self.logger.error(f"BLE connection failed during initialization: {e}")
+                import traceback
+                self.logger.debug(f"BLE connection traceback: {traceback.format_exc()}")
+                return False
 
             # Test connection
             result = await self.meshcore.commands.send_device_query()
@@ -255,7 +271,12 @@ class MeshConnection:
             # Initialize managers
             self._initialize_managers()
 
-            self.logger.info(f"Connected to {self.device_info.get('name', 'Unknown')}")
+            # Explicitly refresh contacts after connection
+            self.logger.debug("Refreshing contacts after BLE connection...")
+            await self.refresh_contacts()
+
+            contact_count = len(self.contacts.get_all()) if self.contacts else 0
+            self.logger.info(f"Connected to {self.device_info.get('name', 'Unknown')} via BLE. Found {contact_count} contacts.")
             return True
 
         except Exception as e:
