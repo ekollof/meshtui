@@ -613,23 +613,8 @@ class MeshTUI(App):
             # Fall back to auto-detection if no args provided
             self.logger.info("No connection args provided, attempting auto-detection...")
             
-            # First try BLE connection
-            try:
-                success = await asyncio.wait_for(
-                    self.connection.connect_ble(), timeout=15.0
-                )
-            except asyncio.TimeoutError:
-                self.logger.error("Timeout auto-connecting via BLE")
-                success = False
-            if success:
-                self.logger.info("Auto-connected via BLE successfully")
-                await asyncio.wait_for(self.update_contacts(), timeout=5.0)
-                await asyncio.wait_for(self.update_channels(), timeout=5.0)
-                await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
-                return
-
-            # If BLE fails, try serial devices with quick scan (prioritizes USB devices)
-            self.logger.info("BLE auto-connect failed, trying serial devices...")
+            # First try serial devices with quick scan (prioritizes USB devices - faster and more reliable)
+            self.logger.info("Scanning for serial devices...")
             try:
                 serial_devices = await asyncio.wait_for(
                     self.connection.scan_serial_devices(quick_scan=True), timeout=20.0
@@ -667,6 +652,22 @@ class MeshTUI(App):
                     self.logger.debug("About to refresh messages...")
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                     return
+
+            # If serial fails, try BLE connection as fallback
+            self.logger.info("Serial auto-connect failed, trying BLE...")
+            try:
+                success = await asyncio.wait_for(
+                    self.connection.connect_ble(), timeout=15.0
+                )
+            except asyncio.TimeoutError:
+                self.logger.error("Timeout auto-connecting via BLE")
+                success = False
+            if success:
+                self.logger.info("Auto-connected via BLE successfully")
+                await asyncio.wait_for(self.update_contacts(), timeout=5.0)
+                await asyncio.wait_for(self.update_channels(), timeout=5.0)
+                await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
+                return
 
             self.logger.info("Auto-connect failed - no compatible devices found")
         except Exception as e:
