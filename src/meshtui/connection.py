@@ -895,6 +895,8 @@ class MeshConnection:
             self.messages.append(sent_msg)
             if self.db:
                 self.db.store_message(sent_msg)
+                # Mark as read so our own sent message doesn't show as unread
+                self.db.mark_as_read(recipient_pubkey or recipient_name)
 
             self.logger.info(f"Sent and stored {msg_type} message to {recipient_name}")
             return status_info
@@ -1791,6 +1793,9 @@ class MeshConnection:
             self.messages.append(sent_msg)
             if self.db:
                 self.db.store_message(sent_msg)
+                # Mark channel as read so our own sent message doesn't show as unread
+                channel_name = f"Channel {channel_id}" if channel_id != 0 else "Public"
+                self.db.mark_as_read(channel_name)
 
             self.logger.info(f"Sent and stored message to channel {channel_id}: {message}")
             return True

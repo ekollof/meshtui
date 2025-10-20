@@ -403,24 +403,20 @@ class MessageDatabase:
                 # Note: Messages may have short pubkey prefixes, so we check both directions:
                 # - sender_pubkey matches full pubkey OR
                 # - full pubkey starts with sender_pubkey (prefix match)
+                # DO NOT match actual_sender_pubkey or signature - those are for room messages
                 cursor.execute("""
                     SELECT * FROM messages 
                     WHERE (sender_pubkey = ? 
                         OR ? LIKE sender_pubkey || '%'
                         OR recipient_pubkey = ?
                         OR ? LIKE recipient_pubkey || '%'
-                        OR actual_sender_pubkey = ?
-                        OR ? LIKE actual_sender_pubkey || '%'
-                        OR signature = ?
-                        OR ? LIKE signature || '%'
                         OR json_extract(raw_data, '$.recipient') = ?
                         OR json_extract(raw_data, '$.recipient_pubkey') = ?
                         OR ? LIKE json_extract(raw_data, '$.recipient_pubkey') || '%')
                       AND type = 'contact'
                     ORDER BY timestamp ASC, received_at ASC
                     LIMIT ?
-                """, (pubkey, pubkey, pubkey, pubkey, pubkey, pubkey, 
-                      pubkey, pubkey, pubkey, pubkey, pubkey, limit))
+                """, (pubkey, pubkey, pubkey, pubkey, pubkey, pubkey, pubkey, limit))
             
             return [dict(row) for row in cursor.fetchall()]
             
