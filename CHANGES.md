@@ -1,6 +1,42 @@
 # MeshTUI Changelog
 
-## Latest Updates (2025-01-19)
+## Latest Updates (2025-10-20)
+
+### Message Delivery Tracking and Retry Logic
+- **Feature**: Comprehensive delivery tracking for direct messages
+- **ACK Tracking**: Monitor repeater acknowledgments with "✓ Heard X repeats"
+- **Timeout Detection**: Automatic failure detection with "✗ Delivery failed (no repeaters)"
+- **Automatic Retry**: Messages retry up to 3 times with intelligent flood routing fallback
+- **Database Tracking**: All delivery information stored for later analysis
+  - `ack_code` - Unique acknowledgment code
+  - `delivery_status` - 'sent', 'repeated', 'failed', or 'broadcast'
+  - `repeat_count` - Number of repeater ACKs
+  - `last_ack_time` - Timestamp of last ACK
+- **UI Improvements**: Messages displayed immediately, status appears after
+- **Channel Support**: Channel messages show "✓ Sent (broadcast)" (no ACK per API)
+
+### Technical Implementation
+- Added `_pending_acks` dictionary to track message ACKs
+- Implemented `_handle_ack()` event handler for ACK events
+- Added `_check_message_timeout()` for timeout-based failure detection
+- Updated `ContactManager.send_message()` to use `send_msg_with_retry()`
+- Modified database schema to include delivery tracking fields
+- Added `update_message_delivery_status()` method to database
+- Fixed message display order (message first, then status notifications)
+
+### Module Changes
+- `src/meshtui/connection.py` - ACK tracking, retry logic, timeout detection
+- `src/meshtui/contact.py` - Automatic retry with flood routing
+- `src/meshtui/channel.py` - Extract ACK codes (though not used for broadcasts)
+- `src/meshtui/database.py` - New delivery tracking fields and update method
+- `src/meshtui/app.py` - Immediate message display for contacts and channels
+
+### API Limitations Addressed
+- Channel broadcasts don't support ACK tracking (per MeshCore Python API design)
+- Direct messages get full ACK tracking via `send_msg_with_retry()`
+- Automatic fallback to flood routing after 2 failed attempts
+
+## Previous Updates (2025-01-19)
 
 ### Per-Device Database Implementation
 - **Feature**: Each connected device now gets its own database file

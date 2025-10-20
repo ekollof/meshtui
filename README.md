@@ -14,16 +14,41 @@ Unlike the command-line `meshcore-cli`, MeshTUI offers a visual interface with r
 ## Features
 
 - **Real-time chat interface** with contacts and channels
+- **Message delivery tracking** - ACK tracking, retry logic, and delivery status
 - **Device management** - scan, connect, and monitor MeshCore devices
 - **Device identification** - automatically detects and identifies MeshCore devices
 - **Contact management** - view, add, and manage mesh network contacts
 - **Node management** - remote control of repeaters and room servers
-- **Message history** - browse and search through message history
+- **Message history** - browse and search through message history with delivery status
 - **Async operations** - built with asyncio for responsive UI
 - **Multiple connection types** - BLE, TCP, and Serial support
 - **Command line options** - specify connection method and device directly
 - **Integrated log panel** - all logging output displayed in a dedicated panel within the TUI
 - **Configuration persistence** - remembers device connections and settings
+- **Automatic retry** - messages automatically retry with flood routing fallback
+
+### Message Delivery Tracking
+
+MeshTUI provides comprehensive message delivery tracking for direct messages:
+
+- **✓ Sent** - Message successfully transmitted from your device
+- **✓ Heard X repeats** - Number of repeaters that acknowledged forwarding the message
+- **✗ Delivery failed** - No repeaters responded within timeout period
+- **Automatic retry** - Up to 3 send attempts with intelligent flood routing fallback
+- **Database tracking** - All delivery information stored for later analysis
+
+**Note**: Channel broadcasts show "✓ Sent (broadcast)" and don't have ACK tracking (per MeshCore API design).
+
+#### Delivery Status Database
+
+All messages are tracked in the database with delivery information:
+
+- `ack_code` - Unique acknowledgment code for tracking
+- `delivery_status` - Current status: 'sent', 'repeated', 'failed', or 'broadcast'
+- `repeat_count` - Number of repeater acknowledgments received
+- `last_ack_time` - Timestamp of most recent acknowledgment
+
+This allows you to review message delivery history and identify network issues.
 
 ## Installation
 
