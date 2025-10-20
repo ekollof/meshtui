@@ -105,16 +105,16 @@ class MeshConnection:
         """Scan for available BLE MeshCore devices."""
         self.logger.info(f"Scanning for BLE devices (timeout: {timeout}s)...")
         try:
-            devices = await BleakScanner.discover(timeout=timeout)
+            devices = await BleakScanner.discover(timeout=timeout, return_adv=True)
             meshcore_devices = []
 
-            for device in devices:
+            for device, advertisement_data in devices.items():
                 if device.name and device.name.startswith("MeshCore-"):
                     meshcore_devices.append(
                         {
                             "name": device.name,
                             "address": device.address,
-                            "rssi": device.rssi,
+                            "rssi": advertisement_data.rssi if advertisement_data else None,
                             "device": device,
                         }
                     )
@@ -1770,7 +1770,7 @@ class MeshConnection:
         
         return await self.channels.join_channel(channel_name, key)
     
-    async def create_channel(self, channel_idx: int, channel_name: str, channel_secret: bytes = None) -> bool:
+    async def create_channel(self, channel_idx: int, channel_name: str, channel_secret: Optional[bytes] = None) -> bool:
         """Create or update a channel.
         
         Args:
