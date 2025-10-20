@@ -15,6 +15,7 @@ Unlike the command-line `meshcore-cli`, MeshTUI offers a visual interface with r
 - **Device management** - scan, connect, and monitor MeshCore devices
 - **Device identification** - automatically detects and identifies MeshCore devices
 - **Contact management** - view, add, and manage mesh network contacts
+- **Channel creation** - create custom encrypted channels with auto-hash support
 - **Node management** - remote control of repeaters and room servers
 - **Message history** - browse and search through message history with delivery status
 - **Async operations** - built with asyncio for responsive UI
@@ -23,6 +24,7 @@ Unlike the command-line `meshcore-cli`, MeshTUI offers a visual interface with r
 - **Integrated log panel** - all logging output displayed in a dedicated panel within the TUI
 - **Configuration persistence** - remembers device connections and settings
 - **Automatic retry** - messages automatically retry with flood routing fallback
+- **F1 Help** - comprehensive in-app help system
 
 ### Message Delivery Tracking
 
@@ -150,6 +152,34 @@ MeshTUI includes comprehensive remote node management capabilities for repeaters
 - **Repeaters**: Extend network coverage by relaying messages
 - **Room Servers**: Provide shared messaging spaces (BBS-style)
 - **Other Nodes**: Any meshcore-compatible remote device
+
+### Creating Custom Channels
+
+MeshTUI allows you to create encrypted channels for group communication:
+
+#### **How to Create a Channel:**
+
+1. Click the **"+"** button next to the "Channels" header in the sidebar
+2. Enter a **channel slot** (1-7, slot 0 is reserved for Public channel)
+3. Enter a **channel name**:
+   - Use **# prefix** (e.g., `#mychannel`) for auto-generated hash-based secret
+   - Or enter a custom name without # for manual secret management
+4. Click **"Create"** to create the channel
+5. The new channel appears in your channels list
+
+#### **Channel Security:**
+
+- Channels with **# prefix** automatically generate a 16-byte secret from the hash of the channel name
+- Other devices can join by using the same channel name with # prefix
+- Custom channels require manual secret exchange (16 bytes)
+- All channel messages are encrypted using the channel secret
+
+#### **Example:**
+
+Creating a channel named `#team` will:
+- Generate a consistent secret from hash("#team")
+- Allow anyone with `#team` to decrypt messages
+- Secure from others who don't know the channel name
 
 ### Key Bindings
 

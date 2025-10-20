@@ -1814,6 +1814,15 @@ class MeshTUI(App):
   • Direct messages: Select a contact first
   • Channel messages: Select a channel (e.g., Public)
   • Room messages: Login to room server first
+  • Create channel: Click "+" button next to Channels
+
+[bold yellow]Creating Channels:[/bold yellow]
+  1. Click "+" button next to "Channels" header
+  2. Enter channel slot (1-7, 0 is Public)
+  3. Enter channel name (use # prefix for auto-hash)
+     Example: "#mychannel" generates secret from hash
+  4. Click "Create" to create the channel
+  5. New channel appears in channels list
 
 [bold yellow]Message Delivery:[/bold yellow]
   • ✓ Sent - Message transmitted successfully

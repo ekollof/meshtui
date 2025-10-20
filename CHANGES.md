@@ -2,6 +2,44 @@
 
 ## Latest Updates (2025-10-20)
 
+### Channel Creation UI
+- **Feature**: Create custom encrypted channels directly from the UI
+- **UI Element**: "+" button next to Channels header
+- **Auto-hash Support**: Use # prefix (e.g., #mychannel) for automatic secret generation
+- **Channel Slots**: Support for channels 1-7 (0 is reserved for Public)
+- **Modal Dialog**: User-friendly creation dialog with validation
+- **Automatic Refresh**: Channels list updates immediately after creation
+
+### F1 Help System
+- **Feature**: Comprehensive in-app help accessible via F1 key
+- **Content**: Navigation, messaging, delivery tracking, node management
+- **Keyboard Shortcuts**: All available shortcuts documented
+- **Channel Creation**: Step-by-step instructions included
+- **Modal Screen**: Press any key to close
+
+### Bug Fixes
+- Fixed unread count incrementing for sent messages
+- Fixed room messages appearing in direct contact conversations
+- Fixed channel message filtering by channel slot
+- Improved channel ID mapping for proper database queries
+- Better error handling and validation in channel creation
+
+### Technical Implementation
+- Added `create_channel()` method to connection manager
+- Added `refresh()` method to ChannelManager
+- Channel selection now properly extracts channel index
+- Database queries use "Channel X" format for consistency
+- Mark messages as read immediately after sending
+
+### Module Changes
+- `src/meshtui/connection.py` - Channel creation, mark as read on send
+- `src/meshtui/channel.py` - Channel refresh method
+- `src/meshtui/database.py` - Fixed room message filtering
+- `src/meshtui/app.py` - Channel creation UI, F1 help, improved channel handling
+- `src/meshtui/app.css` - Styling for channel creation dialog
+
+## Previous Updates (2025-10-20)
+
 ### Message Delivery Tracking and Retry Logic
 - **Feature**: Comprehensive delivery tracking for direct messages
 - **ACK Tracking**: Monitor repeater acknowledgments with "✓ Heard X repeats"
