@@ -492,7 +492,8 @@ class MeshTUI(App):
             return
 
         try:
-            n = notify2.Notification(title, message, "mail-unread")
+            # Use network-wireless icon for mesh network messages
+            n = notify2.Notification(title, message, "network-wireless")
             urgency_map = {"low": 0, "normal": 1, "critical": 2}
             n.set_urgency(urgency_map.get(urgency, 1))
             n.show()
