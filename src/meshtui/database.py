@@ -49,7 +49,11 @@ class MessageDatabase:
                     txt_type INTEGER,
                     signature TEXT,
                     raw_data TEXT,
-                    received_at INTEGER NOT NULL
+                    received_at INTEGER NOT NULL,
+                    ack_code TEXT,
+                    delivery_status TEXT DEFAULT 'sent',
+                    repeat_count INTEGER DEFAULT 0,
+                    last_ack_time INTEGER
                 )
             """)
             
@@ -207,6 +211,12 @@ class MessageDatabase:
             signature = msg_data.get('signature')
             received_at = int(datetime.now().timestamp())
             
+            # Delivery tracking fields
+            ack_code = msg_data.get('ack_code')
+            delivery_status = msg_data.get('delivery_status', 'sent')
+            repeat_count = msg_data.get('repeat_count', 0)
+            last_ack_time = msg_data.get('last_ack_time')
+            
             # Store full raw data as JSON
             raw_data = json.dumps(msg_data)
             
@@ -214,12 +224,12 @@ class MessageDatabase:
                 INSERT INTO messages (
                     type, sender, sender_pubkey, recipient_pubkey, actual_sender, actual_sender_pubkey,
                     text, timestamp, channel, snr, path_len, txt_type, signature,
-                    raw_data, received_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    raw_data, received_at, ack_code, delivery_status, repeat_count, last_ack_time
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 msg_type, sender, sender_pubkey, recipient_pubkey, actual_sender, actual_sender_pubkey,
                 text, timestamp, channel, snr, path_len, txt_type, signature,
-                raw_data, received_at
+                raw_data, received_at, ack_code, delivery_status, repeat_count, last_ack_time
             ))
             
             self.conn.commit()
@@ -230,6 +240,41 @@ class MessageDatabase:
         except Exception as e:
             self.logger.error(f"Failed to store message: {e}")
             return -1
+    
+    def update_message_delivery_status(self, ack_code: str, repeat_count: int) -> bool:
+        """Update delivery status of a message when ACK is received.
+        
+        Args:
+            ack_code: The ACK code from the repeater
+            repeat_count: Number of repeaters that have acknowledged
+            
+        Returns:
+            True if message was found and updated
+        """
+        try:
+            cursor = self.conn.cursor()
+            import time
+            
+            cursor.execute("""
+                UPDATE messages 
+                SET repeat_count = ?, 
+                    delivery_status = 'repeated',
+                    last_ack_time = ?
+                WHERE ack_code = ?
+            """, (repeat_count, int(time.time()), ack_code))
+            
+            self.conn.commit()
+            
+            if cursor.rowcount > 0:
+                self.logger.debug(f"Updated delivery status for ACK {ack_code}: {repeat_count} repeats")
+                return True
+            else:
+                self.logger.debug(f"No message found with ACK code {ack_code}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Failed to update message delivery status: {e}")
+            return False
     
     def store_contact(self, contact_data: Dict[str, Any], is_me: bool = False) -> bool:
         """Store or update a contact in the database.

@@ -29,7 +29,7 @@ class ChannelManager:
             message: Message text to send
             
         Returns:
-            True if sent successfully, False otherwise
+            Dict with status info if successful, False otherwise
         """
         if not self.meshcore:
             return False
@@ -57,7 +57,20 @@ class ChannelManager:
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to send channel message: {result}")
                 return False
-            return True
+            
+            # Extract expected_ack if present in payload
+            payload = result.payload if hasattr(result, 'payload') else {}
+            self.logger.debug(f"Channel send result payload: {payload}")
+            expected_ack = payload.get('expected_ack') if isinstance(payload, dict) else None
+            
+            # Return status information including expected_ack for tracking
+            status_info = {
+                'status': 'sent',
+                'result': payload,
+                'expected_ack': expected_ack,
+            }
+            self.logger.debug(f"Channel message sent, result: {result.type}")
+            return status_info
             
         except Exception as e:
             self.logger.error(f"Error sending channel message: {e}")

@@ -722,6 +722,10 @@ class MeshConnection:
             ack_info['repeats'] += 1
             repeats = ack_info['repeats']
             
+            # Update database with delivery status
+            if self.db:
+                self.db.update_message_delivery_status(ack_code, repeats)
+            
             # Show updated status
             if self._message_callback:
                 try:
@@ -734,6 +738,37 @@ class MeshConnection:
         else:
             # Unknown ACK - just log it
             self.logger.debug(f"Received ACK for unknown message: {ack_code[:8]}")
+
+    async def _check_message_timeout(self, ack_code: str, timeout_seconds: int):
+        """Check if a message failed to be delivered after timeout."""
+        await asyncio.sleep(timeout_seconds)
+        
+        # Check if message is still pending (no ACKs received)
+        if ack_code in self._pending_acks:
+            ack_info = self._pending_acks[ack_code]
+            
+            # If no repeats received, message likely failed
+            if ack_info['repeats'] == 0 and not ack_info.get('failed'):
+                ack_info['failed'] = True
+                
+                # Update database to mark as failed
+                if self.db:
+                    try:
+                        cursor = self.db.conn.cursor()
+                        cursor.execute("""
+                            UPDATE messages 
+                            SET delivery_status = 'failed'
+                            WHERE ack_code = ?
+                        """, (ack_code,))
+                        self.db.conn.commit()
+                    except Exception as e:
+                        self.logger.error(f"Failed to update message status: {e}")
+                
+                # Show failure notification
+                if self._message_callback:
+                    self._message_callback("System", "✗ Delivery failed (no repeaters)", "status")
+                
+                self.logger.warning(f"Message delivery failed: {ack_info['message_preview']}")
 
     async def refresh_contacts(self):
         """Refresh the contacts list."""
@@ -804,6 +839,8 @@ class MeshConnection:
             return None
 
         try:
+            import time
+            
             # Use ContactManager to send the message
             status_info = await self.contacts.send_message(recipient_name, message)
             
@@ -811,19 +848,26 @@ class MeshConnection:
                 return None
             
             # Track the ACK code if available
+            ack_code_hex = None
+            suggested_timeout = status_info.get('result', {}).get('suggested_timeout', 30)
             if status_info.get('expected_ack'):
-                ack_code = status_info['expected_ack'].hex()
-                self._pending_acks[ack_code] = {
+                ack_code_hex = status_info['expected_ack'].hex()
+                self._pending_acks[ack_code_hex] = {
                     'timestamp': time.time(),
                     'repeats': 0,
                     'message_preview': message[:30],
-                    'recipient': recipient_name
+                    'recipient': recipient_name,
+                    'timeout': suggested_timeout,
+                    'failed': False
                 }
-                self.logger.debug(f"Tracking ACK for message: {ack_code}")
+                self.logger.debug(f"Tracking ACK for message: {ack_code_hex} (timeout: {suggested_timeout}s)")
                 
                 # Show "Sent" notification
                 if self._message_callback:
                     self._message_callback("System", "✓ Sent", "status")
+                
+                # Schedule timeout check
+                asyncio.create_task(self._check_message_timeout(ack_code_hex, suggested_timeout))
             
             # Look up contact to get pubkey for storage
             contact = self.contacts.get_by_name(recipient_name)
@@ -833,8 +877,7 @@ class MeshConnection:
             is_room = contact and contact.get('type') == 3  # Type 3 = Room Server
             msg_type = 'room' if is_room else 'contact'
 
-            # Store sent message in database
-            import time
+            # Store sent message in database with ACK code for tracking
             sent_msg = {
                 'type': msg_type,
                 'sender': 'Me',
@@ -845,6 +888,9 @@ class MeshConnection:
                 'timestamp': int(time.time()),
                 'channel': None,
                 'sent': True,
+                'ack_code': ack_code_hex,
+                'delivery_status': 'sent',
+                'repeat_count': 0,
             }
             self.messages.append(sent_msg)
             if self.db:
@@ -1710,14 +1756,26 @@ class MeshConnection:
             return False
 
         try:
-            # Use ChannelManager to send the message
-            success = await self.channels.send_message(channel_id, message)
+            import time
             
-            if not success:
+            # Use ChannelManager to send the message
+            status_info = await self.channels.send_message(channel_id, message)
+            
+            if not status_info:
+                self.logger.error(f"ChannelManager returned False for channel {channel_id}")
                 return False
             
-            # Store sent channel message in database
-            import time
+            self.logger.info(f"Channel message sent successfully, result type: {type(status_info)}")
+            self.logger.debug(f"Channel status_info: {status_info}")
+            
+            # Note: Channel messages don't support ACK tracking (they're broadcasts)
+            # Only show "Sent" status, no repeat tracking
+            
+            # Show "Sent" notification
+            if self._message_callback:
+                self._message_callback("System", "✓ Sent (broadcast)", "status")
+            
+            # Store sent channel message in database (no ACK code for broadcasts)
             sent_msg = {
                 'type': 'channel',
                 'sender': 'Me',
@@ -1726,6 +1784,9 @@ class MeshConnection:
                 'timestamp': int(time.time()),
                 'channel': channel_id,
                 'sent': True,
+                'ack_code': None,
+                'delivery_status': 'broadcast',
+                'repeat_count': 0,
             }
             self.messages.append(sent_msg)
             if self.db:

@@ -160,15 +160,16 @@ class ContactManager:
         }
         return type_names.get(node_type, "Unknown")
 
-    async def send_message(self, recipient_name: str, message: str) -> Optional[Dict[str, Any]]:
+    async def send_message(self, recipient_name: str, message: str, use_retry: bool = True) -> Optional[Dict[str, Any]]:
         """Send a message to a contact.
 
-        For regular contacts (type 0, 1) uses send_msg().
+        Uses send_msg_with_retry() by default for automatic retries and flood routing.
         For room servers/repeaters/sensors (type 2, 3, 4) uses send_cmd().
 
         Args:
             recipient_name: The display name of the contact
             message: The message text to send
+            use_retry: Whether to use automatic retry with flood routing (default: True)
 
         Returns:
             Dict with status info if successful, None if failed
@@ -189,23 +190,39 @@ class ContactManager:
                 self.logger.error(f"Contact '{recipient_name}' has no public_key/id field")
                 return None
 
-            # Send message using send_msg for all contact types
-            # Note: send_msg works for all types including rooms (type 3)
-            # send_cmd is only for administrative CLI commands, not chat messages
+            # Send message using send_msg_with_retry for automatic retries
             contact_type = contact.get('type', 1)
             self.logger.info(f"Sending message to {recipient_name} (type {contact_type}, key: {recipient[:16]}...)")
-            result = await self.meshcore.commands.send_msg(recipient, message)
+            
+            if use_retry:
+                # Use retry logic with flood routing fallback
+                result = await self.meshcore.commands.send_msg_with_retry(
+                    recipient, 
+                    message,
+                    max_attempts=3,
+                    max_flood_attempts=2,
+                    flood_after=2,
+                    min_timeout=5
+                )
+            else:
+                # Simple send without retry
+                result = await self.meshcore.commands.send_msg(recipient, message)
 
-            if result.type == EventType.ERROR:
+            if not result or result.type == EventType.ERROR:
                 self.logger.error(f"Failed to send: {result}")
                 return None
 
-            # Return status information
+            # Extract expected_ack if present in payload
+            payload = result.payload if hasattr(result, 'payload') else {}
+            expected_ack = payload.get('expected_ack') if isinstance(payload, dict) else None
+            
+            # Return status information including expected_ack for tracking
             status_info = {
                 'status': 'sent',
-                'result': result.payload if hasattr(result, 'payload') else {},
+                'result': payload,
+                'expected_ack': expected_ack,
             }
-            self.logger.info(f"Message/command sent successfully")
+            self.logger.info(f"Message sent successfully (retry mode: {use_retry})")
             return status_info
 
         except Exception as e:

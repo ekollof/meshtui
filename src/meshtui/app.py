@@ -746,26 +746,17 @@ class MeshTUI(App):
                 from datetime import datetime
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 
-                # Show message as "sending" immediately
+                # Show the message first
                 self.chat_area.write(
-                    f"[dim]{timestamp}[/dim] [blue]You → {self.current_contact}:[/blue] {message} [yellow](sending...)[/yellow]"
+                    f"[dim]{timestamp}[/dim] [blue]You → {self.current_contact}:[/blue] {message}"
                 )
                 
+                # Then send it (status "✓ Sent" will appear after via callback)
                 result = await self.connection.send_message(
                     self.current_contact, message
                 )
                 
                 if result:
-                    # Update status based on result
-                    status = result.get('status', 'sent')
-                    if status == 'delivered':
-                        self.chat_area.write(f"[dim]{timestamp}[/dim] [green]✓ Delivered[/green]")
-                    elif status == 'repeated':
-                        self.chat_area.write(f"[dim]{timestamp}[/dim] [cyan]⟲ Repeated[/cyan]")
-                    elif status == 'acked':
-                        self.chat_area.write(f"[dim]{timestamp}[/dim] [green]✓ Acknowledged[/green]")
-                    else:
-                        self.chat_area.write(f"[dim]{timestamp}[/dim] [green]✓ Sent[/green]")
                     self.message_input.value = ""
                     # Update contact display to refresh last_seen indicator
                     self._update_single_contact_display(self.current_contact)
@@ -773,21 +764,28 @@ class MeshTUI(App):
                     self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Failed to send[/red]")
             elif self.current_channel:
                 # Sending to a channel
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                
+                # Get channel name for display
                 if self.current_channel == "Public":
-                    # Public is channel 0
-                    success = await self.connection.send_channel_message(0, message)
+                    channel_name = "Public"
+                    channel_id = 0
                 else:
-                    success = await self.connection.send_channel_message(
-                        self.current_channel, message
-                    )
+                    channel_name = self.current_channel
+                    channel_id = self.current_channel
+                
+                # Show the message first
+                self.chat_area.write(
+                    f"[dim]{timestamp}[/dim] [cyan]You → {channel_name}:[/cyan] {message}"
+                )
+                
+                # Then send it (status "✓ Sent" will appear after via callback)
+                success = await self.connection.send_channel_message(channel_id, message)
                 
                 if success:
                     self.message_input.value = ""
-                    # Refresh messages to show the sent message
-                    await self.refresh_messages()
                 else:
-                    from datetime import datetime
-                    timestamp = datetime.now().strftime("%H:%M:%S")
                     self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Failed to send channel message[/red]")
             else:
                 self.chat_area.write("[yellow]No contact or channel selected. Click a contact or channel to start chatting.[/yellow]")
