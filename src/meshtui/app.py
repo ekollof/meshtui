@@ -739,11 +739,12 @@ class MeshTUI(App):
                 name_input = self.query_one("#channel-name-input", Input)
                 
                 try:
-                    slot = int(slot_input.value.strip())
+                    slot_str = slot_input.value.strip()
                     name = name_input.value.strip()
                     
-                    if slot < 1 or slot > 7:
-                        self.app.logger.error("Channel slot must be between 1 and 7")
+                    # Validate inputs
+                    if not slot_str:
+                        self.app.logger.error("Channel slot is required")
                         self.dismiss()
                         return
                     
@@ -752,18 +753,31 @@ class MeshTUI(App):
                         self.dismiss()
                         return
                     
+                    # Parse slot number
+                    try:
+                        slot = int(slot_str)
+                    except ValueError:
+                        self.app.logger.error(f"Invalid channel slot: '{slot_str}' - must be a number")
+                        self.dismiss()
+                        return
+                    
+                    if slot < 1 or slot > 7:
+                        self.app.logger.error(f"Channel slot must be between 1 and 7, got {slot}")
+                        self.dismiss()
+                        return
+                    
                     success = await self.app.connection.create_channel(slot, name)
                     if success:
                         self.app.logger.info(f"✓ Created channel {slot}: {name}")
                         # Refresh channels list
-                        await self.app.refresh_channels()
+                        await self.app.update_channels()
                     else:
                         self.app.logger.error(f"✗ Failed to create channel {slot}: {name}")
                     
-                except ValueError:
-                    self.app.logger.error("Invalid channel slot number")
                 except Exception as e:
                     self.app.logger.error(f"Error creating channel: {e}")
+                    import traceback
+                    self.app.logger.debug(traceback.format_exc())
                 
                 self.dismiss()
             
@@ -834,13 +848,19 @@ class MeshTUI(App):
                 from datetime import datetime
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 
-                # Get channel name for display
+                # Extract channel index from "Channel X" format
                 if self.current_channel == "Public":
                     channel_name = "Public"
                     channel_id = 0
                 else:
                     channel_name = self.current_channel
-                    channel_id = self.current_channel
+                    # Extract index from "Channel 1" format
+                    try:
+                        channel_id = int(channel_name.split()[-1])
+                    except (ValueError, IndexError):
+                        self.logger.error(f"Invalid channel format: {channel_name}")
+                        self.chat_area.write(f"[dim]{timestamp}[/dim] [red]✗ Invalid channel[/red]")
+                        return
                 
                 # Show the message first
                 self.chat_area.write(
@@ -1286,10 +1306,11 @@ class MeshTUI(App):
             # Add other channels (channels is a list, not dict)
             for channel_info in channels:
                 channel_name = channel_info.get('name', 'Unknown')
+                channel_idx = channel_info.get('channel_idx', 0)
                 if channel_name and channel_name != "Public":
-                    # Get unread count for this channel
-                    channel_display_name = f"Channel {channel_info.get('channel_idx', '?')}"
-                    channel_unread = self.connection.get_unread_count(channel_display_name)
+                    # Store channel with index for proper message filtering
+                    channel_key = f"Channel {channel_idx}"
+                    channel_unread = self.connection.get_unread_count(channel_key)
                     
                     if channel_unread > 0:
                         display_text = f"{channel_name} ({channel_unread})"
@@ -1297,9 +1318,10 @@ class MeshTUI(App):
                         display_text = channel_name
                     
                     channel_id = f"channel-{sanitize_id(channel_name)}"
-                    self._channel_id_map[channel_id] = channel_name
+                    # Store the "Channel X" format for database queries
+                    self._channel_id_map[channel_id] = channel_key
                     self.channels_list.append(ListItem(Static(display_text), id=channel_id))
-                    self.logger.debug(f"Added channel to UI: {channel_name}")
+                    self.logger.debug(f"Added channel to UI: {channel_name} (index {channel_idx})")
 
             self.logger.info(f"Updated {len(channels) + 1} channels in UI (including Public)")
         except Exception as e:
