@@ -776,9 +776,18 @@ class MeshConnection:
         # Trigger callback for UI notification
         if self._message_callback:
             try:
-                channel_name = (
-                    f"Channel {channel_idx}" if channel_idx != 0 else "Public"
-                )
+                # Look up actual channel name instead of using generic "Channel X"
+                channel_name = "Public"
+                if channel_idx != 0 and self.channels:
+                    channels = await self.channels.get_channels()
+                    for ch in channels:
+                        if ch.get("id") == channel_idx:
+                            channel_name = ch.get("name", f"Channel {channel_idx}")
+                            break
+                    else:
+                        # Channel not found in list, use generic name
+                        channel_name = f"Channel {channel_idx}"
+
                 self._message_callback(
                     sender_name, msg_data.get("text", ""), "channel", channel_name
                 )
@@ -1376,7 +1385,6 @@ class MeshConnection:
         """
         if not self.contacts:
             return []
-
 
         now = int(time.time())
 
