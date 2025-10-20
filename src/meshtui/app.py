@@ -9,6 +9,13 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+try:
+    import notify2
+
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    NOTIFICATIONS_AVAILABLE = False
+
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -118,6 +125,18 @@ class MeshTUI(App):
         # Setup logging (will be configured in on_mount)
         self.logger = logging.getLogger("meshtui")
         self.logger.setLevel(logging.DEBUG)  # Enable debug logging
+
+        # Setup desktop notifications
+        self.notifications_enabled = False
+        if NOTIFICATIONS_AVAILABLE:
+            try:
+                notify2.init("MeshTUI")
+                self.notifications_enabled = True
+                self.logger.info("Desktop notifications enabled")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize notifications: {e}")
+        else:
+            self.logger.info("notify2 not available, desktop notifications disabled")
 
     def compose(self) -> ComposeResult:
         """Compose the UI layout."""
@@ -459,6 +478,28 @@ class MeshTUI(App):
         # Schedule UI update
         self.call_later(lambda: asyncio.create_task(self.update_contacts()))
 
+    def _send_desktop_notification(
+        self, title: str, message: str, urgency: str = "normal"
+    ):
+        """Send a desktop notification via D-Bus.
+
+        Args:
+            title: Notification title
+            message: Notification message body
+            urgency: Urgency level: 'low', 'normal', or 'critical'
+        """
+        if not self.notifications_enabled:
+            return
+
+        try:
+            n = notify2.Notification(title, message, "mail-unread")
+            urgency_map = {"low": 0, "normal": 1, "critical": 2}
+            n.set_urgency(urgency_map.get(urgency, 1))
+            n.show()
+            self.logger.debug(f"Sent desktop notification: {title}")
+        except Exception as e:
+            self.logger.warning(f"Failed to send desktop notification: {e}")
+
     def _on_new_message(
         self,
         sender: str,
@@ -551,6 +592,15 @@ class MeshTUI(App):
             source = channel_name if msg_type == "channel" else sender
             preview = text[:50] + "..." if len(text) > 50 else text
             self.logger.info(f"💬 New message from {source}: {preview}")
+
+            # Send desktop notification
+            self._send_desktop_notification(
+                "MeshTUI - Message Received",
+                f"{source}: {preview}",
+                urgency="normal",
+            )
+
+            # Send in-app notification
             self.notify(
                 f"New message from {source}",
                 title="Message Received",
@@ -1175,9 +1225,7 @@ class MeshTUI(App):
                         self.current_contact, message
                     )
                     if success:
-                        self.chat_area.write(
-                            "[green]✓ Logged in successfully![/green]"
-                        )
+                        self.chat_area.write("[green]✓ Logged in successfully![/green]")
                         self.chat_area.write("[dim]Loading queued messages...[/dim]")
                         self._awaiting_room_password = False
                         # Restore normal input mode
