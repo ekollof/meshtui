@@ -75,6 +75,24 @@ class ChannelManager:
         except Exception as e:
             self.logger.error(f"Error sending channel message: {e}")
             return False
+    
+    async def refresh(self) -> None:
+        """Refresh the channels list by querying all channel slots."""
+        if not self.meshcore:
+            return
+        
+        try:
+            self.logger.debug("Refreshing channels list")
+            # Query channels 0-7 (typical range for most devices)
+            for idx in range(8):
+                try:
+                    result = await self.meshcore.commands.get_channel(idx)
+                    if result.type != EventType.ERROR:
+                        self.logger.debug(f"Channel {idx} info: {result.payload}")
+                except Exception as e:
+                    self.logger.debug(f"Channel {idx} not available: {e}")
+        except Exception as e:
+            self.logger.error(f"Error refreshing channels: {e}")
 
     async def get_channels(self) -> List[Dict[str, Any]]:
         """Get list of available channels.

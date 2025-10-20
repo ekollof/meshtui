@@ -49,6 +49,19 @@ Header {
     text-style: bold;
     border-bottom: solid $primary;
     margin-top: 1;
+    width: 1fr;
+}
+
+#channels-header-row {
+    height: 3;
+    layout: horizontal;
+    margin-top: 1;
+}
+
+#create-channel-btn {
+    width: 5;
+    height: 3;
+    min-width: 5;
 }
 
 #channels-list {
@@ -342,6 +355,27 @@ TextArea:focus {
 
 .pending {
     color: $warning;
+}
+
+/* Create Channel Dialog */
+#create-channel-dialog {
+    background: $panel;
+    border: solid $accent;
+    padding: 2;
+    width: 60;
+    height: auto;
+}
+
+#dialog-buttons {
+    layout: horizontal;
+    height: 5;
+    margin-top: 1;
+}
+
+#dialog-buttons Button {
+    width: 1fr;
+    height: 3;
+    margin: 0 1;
 }
 
 /* Help text styling */

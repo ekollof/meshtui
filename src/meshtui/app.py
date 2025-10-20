@@ -92,7 +92,7 @@ class MeshTUI(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+r", "refresh", "Refresh"),
-        Binding("f1", "help", "Help"),
+        Binding("f1", "show_help", "Help"),
     ]
 
     def __init__(self, args):
@@ -120,7 +120,9 @@ class MeshTUI(App):
                 yield Static("Contacts", id="contacts-header")
                 yield ListView(id="contacts-list")
                 
-                yield Static("Channels", id="channels-header")
+                with Horizontal(id="channels-header-row"):
+                    yield Static("Channels", id="channels-header")
+                    yield Button("+", id="create-channel-btn", variant="success")
                 yield ListView(id="channels-list")
                 
                 yield Button("Send Advert (0-hop)", id="advert-0hop-btn", variant="primary")
@@ -706,6 +708,71 @@ class MeshTUI(App):
             self.logger.error(f"Error sending flood advertisement: {e}")
             import traceback
             self.logger.debug(traceback.format_exc())
+    
+    @on(Button.Pressed, "#create-channel-btn")
+    def show_create_channel_dialog(self) -> None:
+        """Show dialog to create a new channel."""
+        from textual.widgets import Label
+        from textual.containers import VerticalScroll, Horizontal, Vertical
+        from textual.screen import ModalScreen
+        
+        class CreateChannelScreen(ModalScreen):
+            """Modal for creating a new channel."""
+            
+            def compose(self):
+                with Vertical(id="create-channel-dialog"):
+                    yield Static("[bold cyan]Create New Channel[/bold cyan]")
+                    yield Static("Channel slot 0 is reserved for Public channel", classes="help-text")
+                    yield Static("Use # prefix (e.g., #mychannel) for auto-generated secret", classes="help-text")
+                    yield Label("Channel Slot (1-7):")
+                    yield Input(placeholder="1", id="channel-slot-input")
+                    yield Label("Channel Name:")
+                    yield Input(placeholder="#mychannel or Custom Name", id="channel-name-input")
+                    with Horizontal(id="dialog-buttons"):
+                        yield Button("Create", id="create-btn", variant="success")
+                        yield Button("Cancel", id="cancel-btn", variant="default")
+            
+            @on(Button.Pressed, "#create-btn")
+            async def create_channel(self):
+                """Create the channel."""
+                slot_input = self.query_one("#channel-slot-input", Input)
+                name_input = self.query_one("#channel-name-input", Input)
+                
+                try:
+                    slot = int(slot_input.value.strip())
+                    name = name_input.value.strip()
+                    
+                    if slot < 1 or slot > 7:
+                        self.app.logger.error("Channel slot must be between 1 and 7")
+                        self.dismiss()
+                        return
+                    
+                    if not name:
+                        self.app.logger.error("Channel name is required")
+                        self.dismiss()
+                        return
+                    
+                    success = await self.app.connection.create_channel(slot, name)
+                    if success:
+                        self.app.logger.info(f"✓ Created channel {slot}: {name}")
+                        # Refresh channels list
+                        await self.app.refresh_channels()
+                    else:
+                        self.app.logger.error(f"✗ Failed to create channel {slot}: {name}")
+                    
+                except ValueError:
+                    self.app.logger.error("Invalid channel slot number")
+                except Exception as e:
+                    self.app.logger.error(f"Error creating channel: {e}")
+                
+                self.dismiss()
+            
+            @on(Button.Pressed, "#cancel-btn")
+            def cancel(self):
+                """Cancel channel creation."""
+                self.dismiss()
+        
+        self.push_screen(CreateChannelScreen())
 
     @on(Button.Pressed, "#send-btn")
     async def send_message(self) -> None:
@@ -1709,6 +1776,70 @@ class MeshTUI(App):
         self.logger.info("Quit action triggered")
         # Textual will call on_unmount automatically
         self.exit()
+    
+    def action_show_help(self) -> None:
+        """Show help modal."""
+        help_text = """
+[bold cyan]MeshTUI - Quick Help[/bold cyan]
+
+[bold yellow]Navigation:[/bold yellow]
+  • Click contacts/channels to view conversations
+  • Use Tab to move between input fields
+  • Scroll with mouse wheel or arrow keys
+
+[bold yellow]Messaging:[/bold yellow]
+  • Type message in input field and press Enter to send
+  • Direct messages: Select a contact first
+  • Channel messages: Select a channel (e.g., Public)
+  • Room messages: Login to room server first
+
+[bold yellow]Message Delivery:[/bold yellow]
+  • ✓ Sent - Message transmitted successfully
+  • ✓ Heard X repeats - Acknowledged by repeaters
+  • ✗ Delivery failed - No response within timeout
+  • Channel broadcasts show "✓ Sent (broadcast)"
+
+[bold yellow]Node Management:[/bold yellow]
+  1. Switch to Node Management tab
+  2. Click "Refresh Nodes" to scan
+  3. Enter node name and password
+  4. Click "Login" to authenticate
+  5. Use command input to send commands
+
+[bold yellow]Keyboard Shortcuts:[/bold yellow]
+  • Ctrl+C - Quit application
+  • Ctrl+R - Refresh current view
+  • F1 - Show this help
+
+[bold yellow]Connection Types:[/bold yellow]
+  • Direct contacts - Point-to-point messaging
+  • Channels - Broadcast to all channel members
+  • Room servers - BBS-style shared messaging
+  • Repeaters - Extend network coverage
+
+[bold yellow]Unread Messages:[/bold yellow]
+  • Blue dot indicates unread messages
+  • Messages marked as read when viewing conversation
+
+For more information, see README.md
+        """
+        
+        from textual.widgets import Label
+        from textual.containers import VerticalScroll
+        from textual.screen import ModalScreen
+        
+        class HelpScreen(ModalScreen):
+            """Help modal screen."""
+            
+            def compose(self):
+                with VerticalScroll():
+                    yield Label(help_text, markup=True)
+            
+            def on_key(self, event):
+                """Close on any key press."""
+                self.dismiss()
+        
+        self.push_screen(HelpScreen())
 
 
 def main():

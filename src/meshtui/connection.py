@@ -1748,6 +1748,38 @@ class MeshConnection:
             return False
         
         return await self.channels.join_channel(channel_name, key)
+    
+    async def create_channel(self, channel_idx: int, channel_name: str, channel_secret: bytes = None) -> bool:
+        """Create or update a channel.
+        
+        Args:
+            channel_idx: Channel slot (1-7, 0 is reserved for Public)
+            channel_name: Name of the channel (use # prefix for auto-hash secret)
+            channel_secret: Optional 16-byte secret (auto-generated if name starts with #)
+            
+        Returns:
+            True if successful
+        """
+        if not self.meshcore:
+            return False
+        
+        try:
+            self.logger.info(f"Creating channel {channel_idx}: {channel_name}")
+            result = await self.meshcore.commands.set_channel(channel_idx, channel_name, channel_secret)
+            
+            if result.type == EventType.ERROR:
+                self.logger.error(f"Failed to create channel: {result}")
+                return False
+            
+            self.logger.info(f"Channel {channel_idx} created successfully")
+            # Refresh channels list
+            if self.channels:
+                await self.channels.refresh()
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error creating channel: {e}")
+            return False
 
     async def send_channel_message(self, channel_id: int, message: str) -> bool:
         """Send a message to a specific channel.
