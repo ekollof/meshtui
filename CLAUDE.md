@@ -65,7 +65,7 @@
 - `ChatTab` - Chat interface widget
 - `NodeManagementTab` - Node administration interface
 - `ContactList` - Contact list widget with selection
-- `LogPanel` - Integrated logging display
+- `Log` widget - Integrated logging display in Logs tab
 
 **Important Methods**:
 - `on_mount()` - Initialize widgets and start connection
@@ -73,7 +73,7 @@
 - `handle_contact_selected()` - Switch active chat
 - `handle_send_message()` - Send messages to contacts/channels
 
-**UI Layout**: Three-panel design with tabbed center panel (Chat / Node Management)
+**UI Layout**: Two-panel design with sidebar (contacts/channels) and tabbed main content (Chat / Device Settings / Node Management / Logs)
 
 ### 2. connection.py (1,322 lines) - Connection Orchestration
 **Purpose**: Device connection lifecycle, event handling, manager coordination
@@ -186,7 +186,7 @@ meshtui --address C2:2B:A1:D5:3E:B6          # BLE connection
 - **File**: `~/.config/meshtui/meshtui.log`
 - **Level**: DEBUG
 - **Rotation**: 5MB per file, keeps 3 backups
-- **View**: Integrated log panel in TUI + file output
+- **View**: Integrated Logs tab in TUI + file output
 
 ---
 
@@ -410,7 +410,7 @@ When making changes, verify:
 ### UI Layer
 - [ ] Widgets render correctly
 - [ ] User input is handled
-- [ ] Log panel displays output
+- [ ] Logs tab displays output
 - [ ] Tabs switch properly
 - [ ] Contact selection works
 

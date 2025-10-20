@@ -21,7 +21,7 @@ Unlike the command-line `meshcore-cli`, MeshTUI offers a visual interface with r
 - **Async operations** - built with asyncio for responsive UI
 - **Multiple connection types** - BLE, TCP, and Serial support
 - **Command line options** - specify connection method and device directly
-- **Integrated log panel** - all logging output displayed in a dedicated panel within the TUI
+- **Integrated logs** - all logging output displayed in a dedicated Logs tab within the TUI
 - **Configuration persistence** - remembers device connections and settings
 - **Automatic retry** - messages automatically retry with flood routing fallback
 - **F1 Help** - comprehensive in-app help system
@@ -145,11 +145,10 @@ When scanning, MeshTUI will show which devices are confirmed MeshCore devices wi
 
 ### Interface Layout
 
-MeshTUI features a three-panel layout:
+MeshTUI features a two-panel layout with tabbed content:
 
-- **Left Panel (Contacts)**: Shows available mesh network contacts
-- **Center Panel (Tabbed)**: Contains Chat and Node Management tabs
-- **Right Panel (Logs)**: Displays all application logs and connection status
+- **Left Sidebar**: Shows available mesh network contacts and channels
+- **Main Content (Tabbed)**: Contains Chat, Device Settings, Node Management, and Logs tabs
 
 ### Node Management
 
@@ -161,7 +160,7 @@ MeshTUI includes comprehensive remote node management capabilities for repeaters
 - **Node Login/Logout**: Authenticate with repeaters and room servers
 - **Command Execution**: Send commands to remote nodes (no acknowledgment)
 - **Status Monitoring**: Request and display node status information
-- **Real-time Feedback**: All operations logged in the integrated log panel
+- **Real-time Feedback**: All operations logged in the Logs tab
 
 #### **Node Management Workflow:**
 
@@ -313,7 +312,7 @@ All application logs are automatically saved to a log file for postmortem analys
 - **No contacts appearing**: See "Why Contacts Don't Appear" above
 - **Connection fails**: Check serial port permissions and device power
 - **Device not found**: Ensure the device is connected and appears in `/dev/ttyUSB*` or `/dev/ttyACM*`
-- **Logs not updating**: Ensure the log panel is visible in the TUI
+- **Logs not updating**: Switch to the Logs tab to view application logs
 - **Performance issues**: Check log file size and rotate if necessary
 
 ## Configuration
