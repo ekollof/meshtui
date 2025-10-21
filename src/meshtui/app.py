@@ -1770,7 +1770,8 @@ class MeshTUI(App):
 
             # Update contact details
             self.contact_name_display.update(contact_name)
-            pubkey = contact.get("pubkey", "N/A")
+            # Try both field names (public_key is canonical, pubkey is sometimes used)
+            pubkey = contact.get("public_key") or contact.get("pubkey") or "N/A"
             self.contact_pubkey_display.update(pubkey[:16] + "..." if len(pubkey) > 16 else pubkey)
 
             # Contact type mapping (matches contact.py get_node_type_display)
@@ -1806,7 +1807,8 @@ class MeshTUI(App):
                 self.contact_info_status.update("Contact not found")
                 return
 
-            pubkey = contact.get("pubkey")
+            # Try both field names (public_key is canonical, pubkey is sometimes used)
+            pubkey = contact.get("public_key") or contact.get("pubkey")
             if not pubkey:
                 self.contact_info_status.update("Contact has no public key")
                 return
