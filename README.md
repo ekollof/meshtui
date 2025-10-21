@@ -20,6 +20,7 @@ Unlike the command-line `meshcore-cli`, MeshTUI offers a visual interface with r
 - **Message history** - browse and search through message history with delivery status
 - **Async operations** - built with asyncio for responsive UI
 - **Multiple connection types** - BLE, TCP, and Serial support
+- **TCP Proxy** (⚠️ Experimental) - Expose Serial/BLE devices over TCP for remote access
 - **Command line options** - specify connection method and device directly
 - **Integrated logs** - all logging output displayed in a dedicated Logs tab within the TUI
 - **Configuration persistence** - remembers device connections and settings
@@ -64,6 +65,20 @@ uv tool install meshtui
 ```
 
 This will install the `meshtui` command globally and isolate its dependencies.
+
+#### Optional: TCP Proxy Component
+
+**⚠️ EXPERIMENTAL**: The TCP proxy is a new feature in active development.
+
+To install with the TCP proxy component (allows exposing Serial/BLE devices over TCP):
+
+```bash
+pipx install meshtui[proxy]
+# or
+uv tool install meshtui[proxy]
+```
+
+This installs the `meshcore-tcp-proxy` command in addition to `meshtui`. See the [TCP Proxy](#tcp-proxy-experimental) section below for usage.
 
 ### Arch Linux
 
@@ -403,6 +418,101 @@ For MeshCore API reference, see `docs/meshcore-api/README.md`. This includes:
 - Event types and handling
 - Room server administration
 - Contact type definitions
+
+## TCP Proxy (EXPERIMENTAL)
+
+**⚠️ Status**: Experimental feature in active development (Phase 1 MVP complete)
+
+The MeshCore TCP Proxy allows you to expose USB Serial or BLE-connected MeshCore devices over TCP/IP, enabling remote network access and TCP mode testing without WiFi firmware.
+
+### Features
+
+- **Zero protocol translation** - Identical framing across Serial/BLE/TCP
+- **Multi-client support** - Multiple meshtui instances can connect simultaneously
+- **Remote access** - Access locally-connected devices over network
+- **TCP testing** - Test TCP connectivity without WiFi firmware
+
+### Installation
+
+```bash
+# Install meshtui with proxy support
+pipx install meshtui[proxy]
+```
+
+### Usage
+
+**Start the proxy** (exposes serial device on TCP port 5000):
+```bash
+meshcore-tcp-proxy --serial /dev/ttyUSB0
+```
+
+**Connect meshtui via TCP**:
+```bash
+meshtui --tcp localhost --port 5000
+```
+
+### Advanced Options
+
+```bash
+# Custom port
+meshcore-tcp-proxy --serial /dev/ttyUSB0 --port 6000
+
+# Debug mode with frame logging
+meshcore-tcp-proxy --serial /dev/ttyUSB0 --debug --log-frames
+
+# Use config file
+meshcore-tcp-proxy --config /path/to/config.yaml
+
+# Remote access (listen on all interfaces)
+meshcore-tcp-proxy --serial /dev/ttyUSB0 --host 0.0.0.0
+```
+
+### Configuration File
+
+Example configuration (`config.yaml`):
+```yaml
+proxy:
+  listen_host: 0.0.0.0
+  listen_port: 5000
+
+backend:
+  type: serial
+  serial_port: /dev/ttyUSB0
+  baudrate: 115200
+  auto_reconnect: true
+
+logging:
+  level: INFO
+  log_frames: false
+```
+
+See `config/proxy/config.yaml.example` for full configuration options.
+
+### Architecture
+
+The proxy consists of:
+- **Serial Backend** - Connects to USB serial devices (Phase 1 ✅)
+- **TCP Server** - Accepts multiple client connections
+- **Frame Router** - Bidirectional forwarding (no protocol translation)
+- **BLE Backend** - Bluetooth LE support (Phase 3, planned)
+
+### Documentation
+
+Complete design documentation: `docs/MESHCORE_TCP_PROXY_DESIGN.md`
+
+### Limitations (Phase 1)
+
+- Serial backend only (BLE support planned for Phase 3)
+- No authentication/encryption (use SSH tunnel or VPN for remote access)
+- Experimental status - may have bugs or breaking changes
+
+### Roadmap
+
+- **Phase 1** (✅ Complete): Serial backend, basic TCP server
+- **Phase 2** (Planned): Multi-client enhancements, session management
+- **Phase 3** (Planned): BLE backend support
+- **Phase 4** (Planned): Auto-reconnect, health monitoring, robustness
+- **Phase 5** (Planned): Systemd service, packaging, deployment tools
 
 ## License
 

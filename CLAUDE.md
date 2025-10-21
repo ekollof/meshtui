@@ -10,9 +10,9 @@
 - **Language**: Python 3.10+
 - **UI Framework**: Textual (Terminal UI)
 - **Hardware API**: meshcore Python library
-- **Codebase Size**: ~4,300 lines of Python
+- **Codebase Size**: ~5,200 lines of Python (including TCP proxy)
 - **Architecture**: Layered, event-driven, async/await throughout
-- **Entry Point**: `meshtui` CLI command
+- **Entry Points**: `meshtui` CLI command, `meshcore-tcp-proxy` (optional)
 - **Config Location**: `~/.config/meshtui/`
 
 ---
@@ -142,6 +142,28 @@
 **Purpose**: Message storage, contact persistence, unread tracking
 
 **Key Class**: `MessageDatabase`
+
+### 8. proxy/ (~860 lines) - TCP Proxy (EXPERIMENTAL)
+**Purpose**: Expose Serial/BLE devices over TCP for remote access
+
+**Status**: Phase 1 MVP complete, experimental
+
+**Key Components**:
+- `proxy.py` - Main orchestration (155 lines)
+- `backends/serial.py` - Serial backend (190 lines)
+- `tcp_server.py` - Multi-client TCP server (200 lines)
+- `config.py` - Configuration system (156 lines)
+- `__main__.py` - CLI entry point (159 lines)
+
+**Features**:
+- Zero protocol translation (identical 0x3C framing)
+- Multi-client support
+- YAML configuration
+- CLI: `meshcore-tcp-proxy --serial /dev/ttyUSB0`
+
+**Installation**: `pip install meshtui[proxy]`
+
+**See**: `docs/MESHCORE_TCP_PROXY_DESIGN.md` for complete design
 
 **Per-Device Databases**:
 - Each connected device gets its own database file
@@ -392,14 +414,16 @@ device.commands.room.logout()
 ## Recent Development History
 
 **Latest Changes**:
-1. **Auto Time Sync** - Automatically syncs device time on connection for devices without GPS
-2. **GPS Detection** - Added GPS availability detection via telemetry mode and coordinates
-3. **Per-Device Databases** - Each device now gets its own database file to prevent data collision
-4. **Room Messaging Fix** - Fixed room messages from other users not appearing in real-time
-5. **Device Settings UI** - Added comprehensive device configuration tab
-6. **Improved Autodetection** - Enhanced serial device identification reliability
+1. **TCP Proxy (EXPERIMENTAL)** - Phase 1 MVP complete: expose Serial devices over TCP (~860 lines)
+2. **Auto Time Sync** - Automatically syncs device time on connection for devices without GPS
+3. **GPS Detection** - Added GPS availability detection via telemetry mode
+4. **Per-Device Databases** - Each device now gets its own database file to prevent data collision
+5. **Room Messaging Fix** - Fixed room messages from other users not appearing in real-time
+6. **Device Settings UI** - Added comprehensive device configuration tab
+7. **Improved Autodetection** - Enhanced serial device identification reliability
 
 **Recent Focus Areas**:
+- TCP proxy for remote device access (experimental)
 - Automatic time synchronization for non-GPS devices
 - GPS capability detection
 - Per-device data isolation
