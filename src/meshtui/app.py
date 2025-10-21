@@ -1773,11 +1773,11 @@ class MeshTUI(App):
             pubkey = contact.get("pubkey", "N/A")
             self.contact_pubkey_display.update(pubkey[:16] + "..." if len(pubkey) > 16 else pubkey)
 
-            # Contact type mapping
+            # Contact type mapping (matches contact.py get_node_type_display)
             contact_type = contact.get("type", 0)
             type_map = {
                 0: "Companion",
-                1: "Router",
+                1: "Companion",
                 2: "Repeater",
                 3: "Room Server",
                 4: "Sensor"
