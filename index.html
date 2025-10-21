@@ -51,19 +51,65 @@
                             <span class="dot dot-red"></span>
                             <span class="dot dot-yellow"></span>
                             <span class="dot dot-green"></span>
-                            <span class="terminal-title">meshtui</span>
+                            <span class="terminal-title">meshtui - Connected via Serial</span>
                         </div>
                         <div class="terminal-body">
-                            <pre><span class="prompt">$</span> pipx install meshtui
-<span class="success">✓</span> Installed meshtui
-
-<span class="prompt">$</span> meshtui
-<span class="info">🚀 MeshTUI v0.1.2</span>
-<span class="info">📡 Connecting to device...</span>
-<span class="success">✓</span> Connected to MeshCore via serial
-<span class="success">✓</span> Found 5 contacts
-
-<span class="dim">Chat with mesh network contacts in your terminal!</span></pre>
+                            <div class="tui-mockup">
+                                <div class="tui-header">
+                                    ━━━━━━━━━━━━━━━━━━━━━━━━ <span class="header-title">MeshTUI v0.1.2</span> ━━━━━━━━━━━━━━━━━━━━━━━━
+                                </div>
+                                <div class="tui-main">
+                                    <div class="tui-sidebar">
+                                        <div class="sidebar-header">
+                                            <span class="sidebar-title">═══ Contacts (5) ═══</span>
+                                        </div>
+                                        <div class="contact selected">
+                                            <span class="contact-icon">👤</span> Alice <span class="unread">2</span>
+                                        </div>
+                                        <div class="contact">
+                                            <span class="contact-icon">👤</span> Bob
+                                        </div>
+                                        <div class="contact">
+                                            <span class="contact-icon">🔁</span> Repeater-01
+                                        </div>
+                                        <div class="sidebar-header">
+                                            <span class="sidebar-title">═══ Channels (2) ═══</span>
+                                        </div>
+                                        <div class="contact">
+                                            <span class="contact-icon">📢</span> #general
+                                        </div>
+                                        <div class="contact">
+                                            <span class="contact-icon">🔒</span> #secure
+                                        </div>
+                                    </div>
+                                    <div class="tui-chat">
+                                        <div class="chat-header">
+                                            <span class="chat-title">Chat with Alice</span>
+                                        </div>
+                                        <div class="chat-messages">
+                                            <div class="message received">
+                                                <span class="timestamp">[14:32]</span> <span class="sender">Alice:</span>
+                                                <span class="text">Hey! Did you get the new firmware update?</span>
+                                            </div>
+                                            <div class="message sent">
+                                                <span class="timestamp">[14:33]</span> <span class="you">You:</span>
+                                                <span class="text">Yes! Just installed it. Working great!</span>
+                                                <span class="delivery">✓ Heard 2 repeats</span>
+                                            </div>
+                                            <div class="message received">
+                                                <span class="timestamp">[14:35]</span> <span class="sender">Alice:</span>
+                                                <span class="text">Perfect. Ready to test the mesh?</span>
+                                            </div>
+                                        </div>
+                                        <div class="chat-input">
+                                            <span class="input-prompt">Message:</span> <span class="cursor">█</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="tui-footer">
+                                    <span class="status">Connected • Serial • 5 contacts • Press F1 for help</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
