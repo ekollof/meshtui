@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ekollof/meshtui"
+Homepage = "https://ekollof.github.io/meshtui"
 Issues = "https://github.com/ekollof/meshtui/issues"
 Repository = "https://github.com/ekollof/meshtui"
 
