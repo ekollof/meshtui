@@ -2,6 +2,12 @@
 
 ## Version 0.1.2 (2025-10-21)
 
+### Contact Info Tab Auto-Hide for Channels
+- **Feature**: Contact Info tab now automatically hides when a channel is selected
+- **Behavior**: Tab shows only for contacts (where metadata like last seen, public keys, network paths are relevant)
+- **Why**: Channels don't have contact-specific metadata, so the tab was unnecessary and confusing
+- **Implementation**: Uses Textual's `hide_tab()` and `show_tab()` methods on TabbedContent widget
+
 ### Automatic Time Synchronization
 - **Feature**: Automatically sync device clock on connection for devices without GPS
 - **GPS Detection**: Smart detection of GPS availability via telemetry mode and coordinates
