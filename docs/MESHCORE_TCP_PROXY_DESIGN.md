@@ -1046,6 +1046,7 @@ async def test_frame_forwarding():
    - Real-time status dashboard
    - Log viewer
    - Client management
+   - **Firmware update interface** (see detailed analysis below)
 
 2. **REST API**
    - Start/stop proxy
@@ -1075,6 +1076,321 @@ async def test_frame_forwarding():
    - Failover between multiple backends
    - Clustering for redundancy
    - State synchronization
+
+---
+
+## Firmware Update via Web Frontend
+
+**Status**: Future Enhancement (Priority 3)
+**Feasibility**: ✅ Technically Feasible (with caveats)
+
+### Overview
+
+Adding firmware update capability to the proxy web frontend would allow users to download the latest stable firmware for their device and flash it directly through the web interface. This feature would:
+
+- Detect device model and current firmware version
+- Check for available updates from firmware repository
+- Guide users through the flashing process
+- Provide safety checks and verification
+
+### Current Device Info Capabilities
+
+The MeshCore `ver` command (device query) already provides:
+```python
+{
+    "fw ver": 3,              # Firmware protocol version
+    "max_contacts": 256,      # Device capabilities
+    "max_channels": 8,
+    "ble_pin": 123456,
+    "fw_build": "2024-10-15",  # Build date
+    "model": "Heltec V3",      # Hardware model
+    "ver": "1.2.3"            # Firmware version string
+}
+```
+
+**Key Insight**: We can identify current firmware version and hardware model, allowing us to determine if an update is available.
+
+### Implementation Challenge
+
+**The MeshCore protocol does not currently expose firmware flashing commands.** After analyzing the meshcore Python library, there are:
+- No `flash_firmware()` methods
+- No `BinaryReqType.FIRMWARE_UPDATE` packet types
+- No bootloader access commands
+
+All communication uses high-level framed packets for messaging, contacts, and device configuration—but not firmware updates.
+
+### Implementation Options
+
+#### Option 1: Low-Level Serial Bootloader Access
+
+**Description**: Bypass the MeshCore protocol and communicate directly with the device bootloader (ESP32/RP2040).
+
+**Feasibility**: ⚠️ Technically possible, operationally complex
+
+**Approach**:
+1. Device reboots into bootloader mode (ESP32 ROM bootloader, etc.)
+2. Proxy releases serial port temporarily
+3. Use `esptool.py` library for ESP32 flashing directly
+4. Resume proxy connection after flash completes
+
+**Pros**:
+- Works with existing firmware (no API changes needed)
+- Full control over flash process
+- Can recover from bad firmware
+
+**Cons**:
+- Only works with serial backend (not BLE or TCP)
+- Requires hardware control (DTR/RTS lines for bootloader entry)
+- Complex error handling and recovery
+- Hardware-specific (ESP32 vs RP2040 vs others)
+- Risk of bricking device if interrupted
+
+**Estimated Effort**: 7-10 days
+
+#### Option 2: MeshCore API Extension (Upstream)
+
+**Description**: Add firmware update commands to the MeshCore firmware protocol itself.
+
+**Feasibility**: ✅ Clean design, ❌ Requires upstream changes
+
+**Approach**:
+1. Add new packet types: `FIRMWARE_START`, `FIRMWARE_CHUNK`, `FIRMWARE_END`, `FIRMWARE_STATUS`
+2. Implement OTA update handler in device firmware
+3. Update Python library with `DeviceCommands.update_firmware()` method
+4. Chunked transfer with progress callbacks
+
+**Pros**:
+- Clean API integration
+- Works over all transport types (Serial, BLE, TCP)
+- Safe rollback possible
+- Consistent with MeshCore design philosophy
+
+**Cons**:
+- Requires upstream MeshCore firmware changes
+- Long development cycle (1-2 weeks firmware + testing)
+- Can't update devices with old firmware (chicken-and-egg)
+- Needs buy-in from MeshCore maintainers
+
+**Estimated Effort**: 3-4 weeks (plus upstream coordination)
+
+#### Option 3: Serial Passthrough Mode (⭐ Recommended)
+
+**Description**: Proxy temporarily yields serial port control to allow external flashing tools.
+
+**Feasibility**: ✅ Practical and safe
+
+**Approach**:
+1. **Passthrough API**:
+   - Web API endpoint: `POST /api/flash/begin` → Proxy closes serial connection
+   - Returns: `{"status": "passthrough", "serial_port": "/dev/ttyUSB0"}`
+   - Proxy stops reading from serial
+
+2. **Web Serial API** (Modern browsers):
+   ```javascript
+   // Browser can directly access serial port
+   const port = await navigator.serial.requestPort();
+   await port.open({ baudRate: 115200 });
+
+   // Use web-based esptool.js library
+   await flashFirmware(port, firmwareBinary);
+   ```
+
+3. **Firmware download**:
+   - Web frontend fetches from GitHub releases
+   - Filters by device model (from `ver` command)
+   - Displays changelog and version info
+
+4. **Resume proxy**:
+   - `POST /api/flash/resume` → Proxy reopens serial connection
+   - Normal operation continues
+
+**Architecture**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Web Frontend                             │
+│  1. Fetch device info (model, current version)             │
+│  2. Query GitHub for latest firmware                        │
+│  3. Request passthrough mode from proxy                     │
+│  4. Flash via Web Serial API (browser-native)               │
+│  5. Resume proxy connection                                  │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│                  Proxy Web API                              │
+│  - GET /api/device/info  → Device model, version           │
+│  - POST /api/flash/begin → Close serial, return port path  │
+│  - POST /api/flash/resume → Reopen serial connection        │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+                   Serial Device (Direct)
+```
+
+**Pros**:
+- No firmware changes needed
+- Works immediately with current devices
+- Leverages well-tested tools (esptool.py/esptool.js)
+- Web Serial API = no CLI needed (modern browsers)
+- Safe (external tools have proven error handling)
+
+**Cons**:
+- Proxy unavailable during flash operation
+- Web Serial API requires HTTPS or localhost
+- Only works with serial backend (not BLE)
+- Slightly more complex UX (multi-step process)
+
+**Estimated Effort**: 7-10 days
+
+### Firmware Repository Strategy
+
+Regardless of implementation option, we need a firmware source:
+
+#### GitHub Releases Approach
+```javascript
+// Fetch latest firmware for device model
+const releases = await fetch(
+  'https://api.github.com/repos/meshcore/firmware/releases'
+);
+const latest = releases.find(r => !r.prerelease);
+const assets = latest.assets.filter(a =>
+  a.name.includes(deviceModel)
+);
+```
+
+#### Firmware Manifest
+```json
+{
+  "version": "1.3.0",
+  "build_date": "2025-10-21",
+  "models": [
+    {
+      "name": "Heltec V3",
+      "url": "https://github.com/.../heltec-v3-1.3.0.bin",
+      "checksum": "sha256:abc123...",
+      "min_version": "1.0.0"
+    }
+  ],
+  "changelog": "- Added firmware update API\n- Fixed GPS sync..."
+}
+```
+
+#### Update Check Logic
+```python
+current_version = device_info["ver"]  # "1.2.3"
+latest_version = fetch_latest_version(device_info["model"])
+
+if version_compare(latest_version, current_version) > 0:
+    return {"update_available": True, "latest": latest_version}
+```
+
+### Security Considerations
+
+#### Firmware Verification
+- **SHA256 checksums**: Verify downloaded firmware integrity
+- **Signature validation**: Check signed releases (if available)
+- **HTTPS only**: Use secure transport for downloads
+
+#### User Safety
+- **Battery check**: Require >50% battery before flash
+- **Backup warning**: Warn about potential data loss
+- **Confirmation dialogs**: Multi-step confirmation (model, version, risks)
+- **Timeout protection**: Abort if flash takes too long
+
+#### Proxy Security
+- **Authentication**: Require auth for flash operations
+- **Rate limiting**: Prevent spam/abuse attempts
+- **Audit logging**: Log all flash attempts with timestamps
+
+### Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| Device bricking | Low | Critical | Battery checks, checksums, tested tools |
+| Interrupted flash | Medium | High | Bootloader recovery mode, user warnings |
+| Wrong firmware | Low | Critical | Model verification, explicit confirmation |
+| Proxy deadlock | Medium | Medium | Timeout mechanisms, manual resume endpoint |
+| Web Serial incompatibility | Low | Medium | Fallback to CLI guidance instructions |
+
+### Recommended Implementation Plan
+
+#### Phase 1: Foundation (Web Frontend MVP)
+**Goal**: Build web UI for proxy management
+
+**Features**:
+1. Create basic web frontend (React/Vue/Vanilla JS)
+2. Display device info (model, version, connection status)
+3. Show connected clients list
+4. Basic controls (reconnect, view logs)
+
+**Estimated**: 5-7 days
+
+#### Phase 2: Firmware Update (Passthrough Mode)
+**Goal**: Enable firmware flashing capability
+
+**Features**:
+1. Add proxy passthrough API endpoints
+2. Implement GitHub releases integration
+3. Add Web Serial API flash workflow
+4. Safety checks and user confirmations
+5. Progress indicators and status updates
+
+**Estimated**: 7-10 days
+
+#### Phase 3: Enhancement (Optional)
+**Goal**: Improve UX and automation
+
+**Features**:
+1. Automatic update checks on connection
+2. Scheduled update prompts
+3. Firmware rollback capability
+4. Multi-device management interface
+
+**Estimated**: 5-7 days
+
+### Web Frontend Technology Stack
+
+**Recommended**: Vanilla JavaScript or lightweight framework
+
+**Rationale**:
+- Simple single-page application
+- No complex state management needed
+- Minimal bundle size
+- Easy to package with proxy
+
+**Alternative**: React/Vue if expanding to full device management suite
+
+**Key Libraries**:
+- **Web Serial API**: Native browser support (Chrome, Edge, Opera)
+- **esptool-js**: Web-based ESP32 flashing library
+- **Axios/Fetch**: API communication
+- **Chart.js**: Real-time statistics (optional)
+
+### Conclusion
+
+**Firmware update via TCP proxy web frontend is feasible and recommended** using **Option 3: Serial Passthrough with Web Serial API**.
+
+**Key Advantages**:
+- ✅ No firmware changes required
+- ✅ Works with existing devices immediately
+- ✅ Leverages proven flashing tools
+- ✅ Modern browser-native experience
+- ✅ Reasonable development time (7-10 days)
+
+**Next Steps**:
+1. Implement basic web frontend (Phase 1)
+2. Add passthrough mode to proxy API
+3. Integrate Web Serial API
+4. Set up firmware repository/manifest
+5. Test extensively with multiple device models
+
+Once a web frontend exists, other management features become easier to add:
+- Real-time device monitoring dashboard
+- Configuration backup/restore
+- Multi-device fleet management
+- Firmware rollback capability
+- Automatic update notifications
+- Usage statistics and telemetry
+
+This provides a solid foundation for a comprehensive device management system while remaining practical to implement.
 
 ---
 
