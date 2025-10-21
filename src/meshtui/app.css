@@ -58,7 +58,7 @@ Header {
     margin-top: 1;
 }
 
-#create-channel-btn {
+#create-channel-btn, #delete-channel-btn {
     width: 5;
     height: 3;
     min-width: 5;
@@ -441,7 +441,7 @@ TextArea:focus {
 }
 
 #contact-notes-input {
-    height: 6;
+    height: 10;
     background: $surface;
     border: solid $primary;
     margin: 0 1 1 1;
@@ -451,6 +451,25 @@ TextArea:focus {
 #save-notes-btn {
     height: 1;
     margin: 0 1 1 1;
+}
+
+#contact-actions-container {
+    dock: bottom;
+    height: auto;
+    background: $panel;
+    padding: 0 1;
+}
+
+#contact-actions-buttons {
+    layout: horizontal;
+    height: 5;
+    width: 100%;
+}
+
+#contact-actions-buttons Button {
+    width: 1fr;
+    height: 3;
+    margin: 0 1;
 }
 
 /* Contact Info Tab - Two column layout */

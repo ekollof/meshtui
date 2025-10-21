@@ -152,6 +152,7 @@ class MeshTUI(App):
                 with Horizontal(id="channels-header-row"):
                     yield Static("Channels", id="channels-header")
                     yield Button("+", id="create-channel-btn", variant="success")
+                    yield Button("-", id="delete-channel-btn", variant="error")
                 yield ListView(id="channels-list")
 
                 # Instant-click buttons for sidebar
@@ -183,7 +184,7 @@ class MeshTUI(App):
 
                     with TabPane("Contact Info", id="contact-info-tab"):
                         # Contact information and management (scrollable)
-                        from textual.containers import VerticalScroll
+                        from textual.containers import VerticalScroll, Container
                         with VerticalScroll(id="contact-info-container"):
                             yield Static("Contact Information", id="contact-info-header")
                             yield Static(
@@ -229,10 +230,11 @@ class MeshTUI(App):
                             from textual.widgets import TextArea
                             yield TextArea(id="contact-notes-input", language="markdown")
                             yield Button("Save Notes", id="save-notes-btn", variant="primary")
-
-                            # Actions section
+                        
+                        # Actions section - outside scroll container so always visible
+                        with Container(id="contact-actions-container"):
                             yield Static("[bold]Actions[/bold]", classes="section-title")
-                            with Horizontal():
+                            with Horizontal(id="contact-actions-buttons"):
                                 yield Button("Ping", id="ping-btn", variant="default")
                                 yield Button(
                                     "Delete Contact",
@@ -1092,6 +1094,75 @@ class MeshTUI(App):
                 self.dismiss()
 
         self.push_screen(CreateChannelScreen())
+
+    @on(Button.Pressed, "#delete-channel-btn")
+    async def delete_selected_channel(self) -> None:
+        """Delete the currently selected channel."""
+        if not self.current_channel or self.current_channel == "Public":
+            self.logger.warning("Cannot delete Public channel or no channel selected")
+            self.notify("Cannot delete Public channel", severity="warning")
+            return
+        
+        # Extract channel index from "Channel X" format
+        try:
+            if self.current_channel.startswith("Channel "):
+                channel_idx = int(self.current_channel.split(" ")[1])
+                
+                # Get friendly name for confirmation
+                channel_display_name = self._get_channel_display_name(self.current_channel)
+                
+                # Confirm deletion
+                from textual.screen import ModalScreen
+                from textual.containers import Vertical, Horizontal
+                
+                class ConfirmDeleteChannel(ModalScreen):
+                    def __init__(self, channel_name: str, channel_idx: int):
+                        super().__init__()
+                        self.channel_name = channel_name
+                        self.channel_idx = channel_idx
+                    
+                    def compose(self):
+                        with Vertical(id="delete-channel-dialog"):
+                            yield Static(f"[bold red]Delete Channel {self.channel_name}?[/bold red]")
+                            yield Static(f"This will remove channel slot {self.channel_idx}.", classes="help-text")
+                            with Horizontal(id="dialog-buttons"):
+                                yield Button("Delete", id="confirm-delete-btn", variant="error")
+                                yield Button("Cancel", id="cancel-btn", variant="default")
+                    
+                    @on(Button.Pressed, "#confirm-delete-btn")
+                    async def confirm_delete(self):
+                        import asyncio
+                        try:
+                            # Delete channel by setting it to empty
+                            success = await self.app.connection.create_channel(self.channel_idx, "", b"\x00" * 16)
+                            if success:
+                                self.app.logger.info(f"✓ Deleted channel {self.channel_name}")
+                                self.app.notify(f"Deleted channel {self.channel_name}", severity="information")
+                                # Clear current selection
+                                self.app.current_channel = None
+                                self.app.chat_area.clear()
+                                # Refresh channels list and wait for completion
+                                await self.app.update_channels()
+                                # Small delay to ensure UI updates
+                                await asyncio.sleep(0.1)
+                            else:
+                                self.app.logger.error(f"✗ Failed to delete channel {self.channel_name}")
+                                self.app.notify(f"Failed to delete channel", severity="error")
+                        except Exception as e:
+                            self.app.logger.error(f"Error deleting channel: {e}")
+                            self.app.notify(f"Error: {e}", severity="error")
+                        self.dismiss()
+                    
+                    @on(Button.Pressed, "#cancel-btn")
+                    def cancel(self):
+                        self.dismiss()
+                
+                self.push_screen(ConfirmDeleteChannel(channel_display_name, channel_idx))
+            else:
+                self.logger.warning(f"Cannot parse channel index from: {self.current_channel}")
+        except Exception as e:
+            self.logger.error(f"Error preparing channel deletion: {e}")
+            self.notify(f"Error: {e}", severity="error")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button clicks to trigger immediately without requiring focus first."""
@@ -2108,18 +2179,22 @@ class MeshTUI(App):
         
         # Prevent concurrent updates
         if hasattr(self, '_updating_channels') and self._updating_channels:
-            self.logger.debug("Channel update already in progress, skipping")
+            self.logger.warning("Channel update already in progress, skipping this call")
             return
         
         self._updating_channels = True
+        self.logger.debug("Starting channel update, guard set to True")
 
         try:
             self.logger.debug("Starting channel update process...")
             channels = await self.connection.get_channels()  # Await the async method
             self.logger.debug(f"Retrieved {len(channels)} channels from connection")
 
-            # Clear and repopulate channels list
-            self.channels_list.clear()
+            # Clear and repopulate channels list - remove all children first
+            await self.channels_list.clear()
+            # Force remove all children to ensure clean state
+            for child in list(self.channels_list.children):
+                await child.remove()
             self._channel_id_map.clear()  # Clear the mapping
 
             # Always add "Public" as first item with unread count
