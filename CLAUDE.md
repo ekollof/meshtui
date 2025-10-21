@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**MeshTUI** is a Terminal User Interface (TUI) client for interacting with MeshCore companion radios - mesh network communication devices. Built with the Textual framework, it provides a keyboard-driven interface for managing mesh networks, sending messages, monitoring device status, and administering mesh nodes.
+**MeshTUI** is a full-featured MeshCore client with a comprehensive Terminal User Interface (TUI). Built with the Textual framework, it provides a complete mesh networking experience with keyboard-driven interface for managing mesh networks, sending messages, configuring devices, monitoring network status, and administering mesh nodes (repeaters, room servers, sensors).
 
 ### Quick Facts
 - **Language**: Python 3.10+

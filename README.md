@@ -1,12 +1,12 @@
 # MeshTUI
 
-MeshTUI: A Textual TUI interface to MeshCore companion radios
+MeshTUI: A Full-Featured MeshCore Client with Terminal UI
 
 ## Description
 
-MeshTUI is a terminal user interface (TUI) client for interacting with MeshCore companion radios. Built with [Textual](https://textual.textualize.io/), it provides an intuitive, keyboard-driven interface for managing mesh networks, sending messages, and monitoring device status.
+MeshTUI is a comprehensive terminal user interface (TUI) client for MeshCore devices. Built with [Textual](https://textual.textualize.io/), it provides a complete mesh networking experience with an intuitive, keyboard-driven interface for managing mesh networks, sending messages, administering nodes, and monitoring network status.
 
-Unlike the command-line `meshcore-cli`, MeshTUI offers a visual interface with real-time updates, contact management, and chat functionality all in one terminal window.
+Unlike the command-line `meshcore-cli`, MeshTUI offers a rich visual interface with real-time updates, persistent message history, contact management, device configuration, and full node administration capabilities all in one terminal window.
 
 ## Features
 

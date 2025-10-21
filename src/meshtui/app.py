@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-meshtui - Textual TUI interface to meshcore companion radios
+meshtui - Full-featured MeshCore client with Terminal UI
 """
 
 import argparse
