@@ -1,5 +1,30 @@
 # MeshTUI Changelog
 
+## Version 0.1.2 (2025-10-21)
+
+### Automatic Time Synchronization
+- **Feature**: Automatically sync device clock on connection for devices without GPS
+- **GPS Detection**: Smart detection of GPS availability via telemetry mode and coordinates
+- **When It Runs**: Triggered automatically during serial, BLE, and TCP connections
+- **Logic**: GPS-enabled devices get accurate time from satellites, so sync is skipped for those
+- **Why It Matters**: Devices without GPS often have incorrect time, affecting message timestamps and network operations
+
+### Technical Implementation
+- Added `has_gps()` method to detect GPS availability
+  - Checks location telemetry mode (`telemetry_mode_loc`)
+  - Checks for non-zero coordinates (`adv_lat`, `adv_lon`)
+- Added `auto_sync_time_if_needed()` method
+  - Automatically called after successful connection
+  - Uses system time via `time.time()`
+  - Includes timeout handling and error logging
+- Integration in all connection methods:
+  - `connect_serial()` - Line 415
+  - `connect_ble()` - Line 310
+  - `connect_tcp()` - Line 354
+
+### Module Changes
+- `src/meshtui/connection.py` - GPS detection and auto time sync methods
+
 ## Version 0.1.1 (2025-10-20)
 
 ### Documentation Updates

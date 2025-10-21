@@ -1,6 +1,6 @@
 # CLAUDE.md - MeshTUI Project Guide for AI Assistants
 
-**Last Updated**: 2025-10-18
+**Last Updated**: 2025-10-21
 
 ## Project Overview
 
@@ -89,10 +89,14 @@
 - `send_message()` - Send message to contact/channel
 - `get_contacts()` - Retrieve contact list
 - `get_channels()` - Retrieve channel list
+- `has_gps()` - Detect if connected device has GPS available
+- `auto_sync_time_if_needed()` - Automatically sync time for devices without GPS
 
 **Event Handling**: Subscribes to meshcore events and updates managers/database
 
 **Database Initialization**: Database is created per-device after connection, using the device's public key from `meshcore.self_info`
+
+**Auto Time Sync**: On connection, automatically syncs device time if GPS is not detected (GPS-enabled devices get accurate time from satellites)
 
 ### 3. transport.py (269 lines) - Transport Layer
 **Purpose**: Abstract BLE/Serial/TCP connectivity
@@ -388,13 +392,16 @@ device.commands.room.logout()
 ## Recent Development History
 
 **Latest Changes**:
-1. **Per-Device Databases** - Each device now gets its own database file to prevent data collision
-2. **Room Messaging Fix** - Fixed room messages from other users not appearing in real-time
-3. **Device Settings UI** - Added comprehensive device configuration tab
-4. **Improved Autodetection** - Enhanced serial device identification reliability
-5. **Unit Test Suite** - Added comprehensive pytest test coverage
+1. **Auto Time Sync** - Automatically syncs device time on connection for devices without GPS
+2. **GPS Detection** - Added GPS availability detection via telemetry mode and coordinates
+3. **Per-Device Databases** - Each device now gets its own database file to prevent data collision
+4. **Room Messaging Fix** - Fixed room messages from other users not appearing in real-time
+5. **Device Settings UI** - Added comprehensive device configuration tab
+6. **Improved Autodetection** - Enhanced serial device identification reliability
 
 **Recent Focus Areas**:
+- Automatic time synchronization for non-GPS devices
+- GPS capability detection
 - Per-device data isolation
 - Room server messaging improvements
 - Device configuration management

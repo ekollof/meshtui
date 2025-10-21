@@ -306,6 +306,9 @@ class MeshConnection:
             self.logger.debug("Refreshing contacts after BLE connection...")
             await self.refresh_contacts()
 
+            # Auto-sync time if device has no GPS
+            await self.auto_sync_time_if_needed()
+
             contact_count = len(self.contacts.get_all()) if self.contacts else 0
             self.logger.info(
                 f"Connected to {self.device_info.get('name', 'Unknown')} via BLE. Found {contact_count} contacts."
@@ -340,8 +343,19 @@ class MeshConnection:
             # Initialize device-specific database
             self._initialize_device_database()
 
+            # Initialize managers
+            self._initialize_managers()
+
+            # Explicitly refresh contacts after connection
+            self.logger.debug("Refreshing contacts after TCP connection...")
+            await self.refresh_contacts()
+
+            # Auto-sync time if device has no GPS
+            await self.auto_sync_time_if_needed()
+
+            contact_count = len(self.contacts.get_all()) if self.contacts else 0
             self.logger.info(
-                f"Connected to {self.device_info.get('name', 'Unknown')} via TCP"
+                f"Connected to {self.device_info.get('name', 'Unknown')} via TCP. Found {contact_count} contacts."
             )
             return True
 
@@ -410,6 +424,9 @@ class MeshConnection:
             # Explicitly refresh contacts after connection
             self.logger.debug("Refreshing contacts after connection...")
             await self.refresh_contacts()
+
+            # Auto-sync time if device has no GPS
+            await self.auto_sync_time_if_needed()
 
             contact_count = len(self.contacts.get_all()) if self.contacts else 0
             self.logger.info(
@@ -1507,6 +1524,73 @@ class MeshConnection:
             )
         except Exception:
             return bool(self.connected)
+
+    def has_gps(self) -> bool:
+        """Check if the connected device has GPS available.
+
+        Detects GPS by checking if the device has non-zero coordinates in self_info
+        or if location telemetry mode is enabled.
+
+        Returns:
+            True if device appears to have GPS, False otherwise
+        """
+        if not self.meshcore or not hasattr(self.meshcore, "self_info"):
+            return False
+
+        self_info = self.meshcore.self_info
+        if not self_info:
+            return False
+
+        # Check if location telemetry mode is enabled (indicates GPS capability)
+        telemetry_mode_loc = self_info.get("telemetry_mode_loc", 0)
+        if telemetry_mode_loc > 0:
+            return True
+
+        # Check if device has non-zero coordinates (indicates GPS data)
+        lat = self_info.get("adv_lat", 0)
+        lon = self_info.get("adv_lon", 0)
+
+        # Consider GPS available if coordinates are not (0, 0)
+        return lat != 0 or lon != 0
+
+    async def auto_sync_time_if_needed(self) -> None:
+        """Automatically sync device time if GPS is not available.
+
+        GPS-enabled devices typically have accurate time from satellites.
+        Devices without GPS may have incorrect time and benefit from sync.
+        """
+        if not self.is_connected():
+            self.logger.debug("Not connected, skipping auto time sync")
+            return
+
+        try:
+            if self.has_gps():
+                self.logger.info(
+                    "Device has GPS - skipping auto time sync (GPS provides accurate time)"
+                )
+                return
+
+            self.logger.info(
+                "Device has no GPS - performing automatic time sync..."
+            )
+            current_time = int(time.time())
+            result = await asyncio.wait_for(
+                self.meshcore.commands.set_time(current_time), timeout=5.0
+            )
+
+            if hasattr(result, "type") and result.type == EventType.OK:
+                self.logger.info(
+                    f"✓ Auto time sync successful - set device time to {current_time}"
+                )
+            else:
+                self.logger.warning(
+                    f"Auto time sync failed or returned unexpected result: {result}"
+                )
+
+        except asyncio.TimeoutError:
+            self.logger.warning("Auto time sync timed out")
+        except Exception as e:
+            self.logger.error(f"Error during auto time sync: {e}")
 
     def is_room_admin(self, room_name: str) -> bool:
         """Check if we have admin privileges in a room.
