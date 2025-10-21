@@ -44,6 +44,7 @@ Repository = "https://github.com/ekollof/meshtui"
 
 [project.scripts]
 meshtui = "meshtui.app:main"
+meshcore-tcp-proxy = "meshtui.proxy.__main__:main"
 
 [project.optional-dependencies]
 dev = [
@@ -51,6 +52,11 @@ dev = [
     "pytest-asyncio >= 0.21.0",
     "pytest-cov >= 4.0.0",
     "pytest-mock >= 3.10.0",
+]
+proxy = [
+    "pyserial >= 3.5",
+    "pyserial-asyncio >= 0.6",
+    "pyyaml >= 6.0",
 ]
 
 [tool.pytest.ini_options]

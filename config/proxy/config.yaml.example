@@ -1,0 +1,42 @@
+# MeshCore TCP Proxy Configuration Example
+
+proxy:
+  # TCP server listen address (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)
+  listen_host: 0.0.0.0
+
+  # TCP server listen port
+  listen_port: 5000
+
+  # Maximum number of concurrent clients (0 = unlimited)
+  max_clients: 5
+
+backend:
+  # Backend type: 'serial' or 'ble'
+  type: serial
+
+  # Serial backend configuration
+  serial_port: /dev/ttyUSB0
+  baudrate: 115200
+
+  # BLE backend configuration (alternative to serial)
+  # Uncomment and configure if using BLE backend:
+  # ble_address: "C2:2B:A1:D5:3E:B6"
+
+  # Auto-reconnect on disconnect
+  auto_reconnect: true
+
+  # Delay between reconnect attempts (seconds)
+  reconnect_delay: 5
+
+  # Maximum reconnect attempts (0 = infinite)
+  max_reconnect_attempts: 0
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: INFO
+
+  # Log file path (leave empty or null for stdout only)
+  file: null
+
+  # Log frame data (verbose, for debugging only)
+  log_frames: false
