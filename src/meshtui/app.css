@@ -441,7 +441,7 @@ TextArea:focus {
 }
 
 #contact-notes-input {
-    height: 15;
+    height: 8;
     background: $surface;
     border: solid $primary;
     margin: 1;

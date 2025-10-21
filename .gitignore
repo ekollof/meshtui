@@ -57,3 +57,7 @@ uv.lock
 # Node.js / npm
 package.json
 package-lock.json
+
+# Environment and secrets
+.env
+.pypirc
