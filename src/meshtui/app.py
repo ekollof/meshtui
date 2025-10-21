@@ -545,6 +545,40 @@ class MeshTUI(App):
         # Schedule UI update
         self.call_later(lambda: asyncio.create_task(self.update_contacts()))
 
+    def _get_channel_display_name(self, channel_internal_name: str) -> str:
+        """Get the friendly display name for a channel.
+        
+        Args:
+            channel_internal_name: Internal name like "Channel 1" or "Public"
+            
+        Returns:
+            Friendly name like "#test" or "Public"
+        """
+        if channel_internal_name == "Public":
+            return "Public"
+        
+        # Look up in reverse channel map
+        for list_id, internal_name in self._channel_id_map.items():
+            if internal_name == channel_internal_name:
+                # Extract the friendly name from the list item
+                try:
+                    # Find the list item and get its display text
+                    for item in self.channels_list.children:
+                        if hasattr(item, 'id') and item.id == list_id:
+                            # Get the Static widget text
+                            for child in item.children:
+                                if hasattr(child, 'renderable'):
+                                    text = str(child.renderable)
+                                    # Remove unread count if present
+                                    if '(' in text:
+                                        text = text.split('(')[0].strip()
+                                    return text
+                except Exception:
+                    pass
+        
+        # Fallback to internal name
+        return channel_internal_name
+
     def _send_desktop_notification(
         self, title: str, message: str, urgency: str = "normal"
     ):
@@ -586,25 +620,16 @@ class MeshTUI(App):
             txt_type: Text type (0=regular message, 1=command response)
         """
         # Handle status notifications (sent/ACK from repeaters)
+        # Status is now shown inline with timestamps as glyphs, so don't display separately
         if msg_type == "status":
             self.logger.debug(f"📋 Status notification: {text}")
-            try:
-                # Show status in chat area if we're viewing a channel or contact
-                if self.current_contact or self.current_channel:
-                    self.chat_area.write(f"[dim]{text}[/dim]")
-            except Exception as e:
-                self.logger.error(f"Failed to display status: {e}")
+            # Don't show status in chat - it's displayed inline with message
             return
 
         # Handle ACK notifications (message repeated by repeater) - legacy
         if msg_type == "ack":
             self.logger.debug(f"📋 ACK notification: {text}")
-            try:
-                # Show ACK in chat area if we're viewing a channel or contact
-                if self.current_contact or self.current_channel:
-                    self.chat_area.write(f"[dim]{text}[/dim]")
-            except Exception as e:
-                self.logger.error(f"Failed to display ACK: {e}")
+            # Don't show ACK in chat - it's displayed inline with message
             return
 
         # Route command responses (txt_type=1) to Node Management output
@@ -644,12 +669,13 @@ class MeshTUI(App):
         self.logger.debug(f"🔍 is_current_view={is_current_view}")
 
         if is_current_view:
-            # Message is for current view - refresh immediately and mark as read
+            # Message is for current view - append new message instead of refreshing all
             self.logger.info(
-                f"✅ New message in current view from {sender}, refreshing display"
+                f"✅ New message in current view from {sender}, appending to display"
             )
             self.connection.mark_as_read(sender)
-            asyncio.create_task(self.refresh_messages())
+            # Append just this new message instead of reloading everything
+            asyncio.create_task(self._append_single_message(sender, text, msg_type, channel_name))
             # Update the display to clear the unread count
             if msg_type in ("contact", "room"):
                 self._update_single_contact_display(sender)
@@ -657,7 +683,13 @@ class MeshTUI(App):
                 self._update_single_channel_display(channel_name)
         else:
             # Message is from another contact/channel - show notification and update that contact's unread indicator
-            source = channel_name if msg_type == "channel" else sender
+            # For channels, look up friendly name for display
+            if msg_type == "channel" and channel_name:
+                display_name = self._get_channel_display_name(channel_name)
+                source = display_name
+            else:
+                source = sender
+            
             preview = text[:50] + "..." if len(text) > 50 else text
             self.logger.info(f"💬 New message from {source}: {preview}")
 
@@ -1653,8 +1685,8 @@ class MeshTUI(App):
             # Force refresh to ensure UI updates
             self.chat_area.refresh()
 
-            # Load message history for this contact
-            await self.load_contact_messages(contact_name)
+            # Load message history for this contact using refresh_messages
+            await self.refresh_messages()
 
             # Load contact info for Contact Info tab (using public_key if available)
             if pubkey:
@@ -1720,8 +1752,8 @@ class MeshTUI(App):
                     f"[bold cyan]Channel: {channel_name}[/bold cyan]\n"
                 )
 
-            # Load message history for this channel
-            await self.load_channel_messages(channel_name)
+            # Load message history for this channel using refresh_messages
+            await self.refresh_messages()
 
             # Focus the message input
             self.message_input.focus()
@@ -2073,6 +2105,13 @@ class MeshTUI(App):
 
     async def update_channels(self) -> None:
         """Update the channels list in the UI."""
+        
+        # Prevent concurrent updates
+        if hasattr(self, '_updating_channels') and self._updating_channels:
+            self.logger.debug("Channel update already in progress, skipping")
+            return
+        
+        self._updating_channels = True
 
         try:
             self.logger.debug("Starting channel update process...")
@@ -2125,6 +2164,54 @@ class MeshTUI(App):
             import traceback
 
             self.logger.debug(f"Channel update traceback: {traceback.format_exc()}")
+        finally:
+            self._updating_channels = False
+
+    async def _append_single_message(self, sender: str, text: str, msg_type: str, channel_name: str = None) -> None:
+        """Append a single new message to the chat display without reloading history."""
+        from datetime import datetime
+        from rich.text import Text
+        
+        try:
+            self.logger.debug(f"Appending message: sender='{sender}', text='{text[:50]}', type={msg_type}")
+            
+            # Format timestamp
+            time_str = datetime.now().strftime("%H:%M:%S")
+            
+            # Check if message is from me
+            is_from_me = False
+            my_contact = self.connection.db.get_contact_by_me() if self.connection else None
+            if my_contact and sender == "Me":
+                is_from_me = True
+            
+            # Strip sender prefix from text if present (channel messages may include it)
+            content = text.replace("\n", " ").replace("\r", " ")
+            if content.startswith(f"{sender}: "):
+                content = content[len(sender) + 2:]  # Remove "SenderName: " prefix
+            
+            # Build message line
+            msg_text = Text()
+            
+            if is_from_me:
+                msg_text.append(time_str, style="dim")
+                msg_text.append(" ✓ ", style="dim")  # Sent indicator
+                msg_text.append("You:", style="blue")
+                msg_text.append(f" {content}")
+            elif msg_type == "channel":
+                msg_text.append(time_str, style="dim")
+                msg_text.append(" ")
+                msg_text.append(f"{sender}:", style="yellow")
+                msg_text.append(f" {content}")
+            else:
+                msg_text.append(time_str, style="dim")
+                msg_text.append(" ")
+                msg_text.append(f"{sender}:", style="green")
+                msg_text.append(f" {content}")
+            
+            # Append to chat area (RichLog.write adds newline automatically)
+            self.chat_area.write(msg_text)
+        except Exception as e:
+            self.logger.error(f"Failed to append message: {e}")
 
     async def refresh_messages(self) -> None:
         """Refresh and display messages for the current view."""
@@ -2133,8 +2220,10 @@ class MeshTUI(App):
         try:
             self.logger.debug("Refreshing messages...")
 
-            # Clear the chat area
+            # Clear the chat area and force render
             self.chat_area.clear()
+            # Force a refresh cycle to ensure clear completes
+            await asyncio.sleep(0.01)
 
             # Get filtered messages based on current view
             if self.current_contact:
@@ -2160,6 +2249,12 @@ class MeshTUI(App):
 
             # Display messages
             from datetime import datetime
+            from rich.text import Text
+            
+            # Build all messages into a single Rich.Text object
+            chat_text = Text()
+            
+            self.logger.debug(f"Building chat text with {len(messages)} messages")
 
             for msg in messages:
                 # Format timestamp
@@ -2181,11 +2276,30 @@ class MeshTUI(App):
 
                 sender = msg.get("sender", "Unknown")
                 sender_pubkey = msg.get("sender_pubkey", "")
-                content = msg.get("text", "")
+                raw_content = msg.get("text", "")
+                # Replace all newlines with spaces to prevent extra blank lines
+                content = raw_content.replace("\n", " ").replace("\r", " ")
                 msg_type = msg.get("type", "contact")
+                
+                # Debug: Log if we find newlines
+                if "\n" in raw_content or "\r" in raw_content:
+                    self.logger.debug(f"Found newlines in message content: {repr(raw_content[:50])}")
                 actual_sender = msg.get("actual_sender")  # For room messages
                 actual_sender_pubkey = msg.get("actual_sender_pubkey", "")
                 signature = msg.get("signature", "")
+                
+                # Get delivery status and format as glyph
+                delivery_status = msg.get("delivery_status", "sent")
+                repeat_count = msg.get("repeat_count", 0)
+                status_glyph = ""
+                if msg_type == "channel":
+                    status_glyph = " 📡"  # Broadcast
+                elif delivery_status == "failed":
+                    status_glyph = " ❌"  # Failed
+                elif delivery_status == "repeated":
+                    status_glyph = f" ✓×{repeat_count}" if repeat_count > 0 else " ✓"  # Repeated
+                elif delivery_status == "sent":
+                    status_glyph = " ✓"  # Sent
 
                 # Check if this message is from me by comparing pubkeys
                 is_from_me = False
@@ -2231,34 +2345,58 @@ class MeshTUI(App):
                     else:
                         actual_sender = signature[:8]  # Show short key if unknown
 
-                # Format sender display with timestamps
+                # Format sender display with timestamps and status
+                # Append to chat_text instead of writing individually
                 if is_from_me:
                     # Message sent by me (based on pubkey) - always show as "You"
-                    self.chat_area.write(
-                        f"[dim]{time_str}[/dim] [blue]You:[/blue] {content}\n"
-                    )
+                    chat_text.append(f"{time_str}{status_glyph}", style="dim")
+                    chat_text.append(" ")
+                    chat_text.append("You:", style="blue")
+                    chat_text.append(f" {content}\n")
                 elif (msg_type == "room" or is_room_server) and actual_sender:
                     display_sender = f"{sender} / {actual_sender}"
-                    self.chat_area.write(
-                        f"[dim]{time_str}[/dim] [cyan]{display_sender}:[/cyan] {content}\n"
-                    )
+                    chat_text.append(time_str, style="dim")
+                    chat_text.append(" ")
+                    chat_text.append(f"{display_sender}:", style="cyan")
+                    chat_text.append(f" {content}\n")
                 elif msg_type == "room" or is_room_server:
-                    self.chat_area.write(
-                        f"[dim]{time_str}[/dim] [cyan]{sender} / [dim]Anonymous[/dim]:[/dim] {content}\n"
-                    )
+                    chat_text.append(time_str, style="dim")
+                    chat_text.append(" ")
+                    chat_text.append(f"{sender} / ", style="cyan")
+                    chat_text.append("Anonymous", style="dim cyan")
+                    chat_text.append(f": {content}\n")
                 elif self.current_contact and sender == self.current_contact:
-                    self.chat_area.write(
-                        f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n"
-                    )
+                    chat_text.append(time_str, style="dim")
+                    chat_text.append(" ")
+                    chat_text.append(f"{sender}:", style="green")
+                    chat_text.append(f" {content}\n")
                 elif msg_type == "channel":
-                    self.chat_area.write(
-                        f"[dim]{time_str}[/dim] [yellow]{sender}:[/yellow] {content}\n"
-                    )
+                    chat_text.append(f"{time_str}{status_glyph}", style="dim")
+                    chat_text.append(" ")
+                    chat_text.append(f"{sender}:", style="yellow")
+                    chat_text.append(f" {content}\n")
                 else:
                     # Show actual sender name (could be someone else in a room conversation)
-                    self.chat_area.write(
-                        f"[dim]{time_str}[/dim] [green]{sender}:[/green] {content}\n"
-                    )
+                    chat_text.append(time_str, style="dim")
+                    chat_text.append(" ")
+                    chat_text.append(f"{sender}:", style="green")
+                    chat_text.append(f" {content}\n")
+            
+            # Write all messages at once
+            if chat_text:
+                self.logger.debug(f"Writing chat_text with length: {len(chat_text.plain)}, repr: {repr(chat_text.plain[:200])}")
+                # Write without the trailing newline - RichLog.write() adds one automatically
+                if chat_text.plain.endswith('\n'):
+                    # Rebuild Text without trailing newline while preserving all styling
+                    lines = chat_text.split('\n')
+                    new_text = Text()
+                    for i, line in enumerate(lines):
+                        if i > 0:
+                            new_text.append('\n')
+                        if i < len(lines) - 1 or line.plain:  # Skip empty last line
+                            new_text.append(line)
+                    chat_text = new_text
+                self.chat_area.write(chat_text)
 
         except asyncio.TimeoutError:
             self.logger.error("Timeout refreshing messages")

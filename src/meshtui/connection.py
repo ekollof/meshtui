@@ -790,20 +790,10 @@ class MeshConnection:
         )
 
         # Trigger callback for UI notification
+        # Always use "Channel X" format internally for consistency
         if self._message_callback:
             try:
-                # Look up actual channel name instead of using generic "Channel X"
-                channel_name = "Public"
-                if channel_idx != 0 and self.channels:
-                    channels = await self.channels.get_channels()
-                    for ch in channels:
-                        if ch.get("id") == channel_idx:
-                            channel_name = ch.get("name", f"Channel {channel_idx}")
-                            break
-                    else:
-                        # Channel not found in list, use generic name
-                        channel_name = f"Channel {channel_idx}"
-
+                channel_name = f"Channel {channel_idx}" if channel_idx != 0 else "Public"
                 self._message_callback(
                     sender_name, msg_data.get("text", ""), "channel", channel_name
                 )
@@ -2200,6 +2190,7 @@ class MeshConnection:
             return False
 
         try:
+            # Note: meshcore API auto-generates secret from hash if name starts with # or secret is None
             self.logger.info(f"Creating channel {channel_idx}: {channel_name}")
             result = await self.meshcore.commands.set_channel(
                 channel_idx, channel_name, channel_secret
