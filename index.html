@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="MeshTUI - Terminal User Interface for MeshCore companion radios. Modern TUI for mesh network communication.">
+    <meta name="keywords" content="mesh network, meshcore, tui, terminal, lora, ham radio, python">
+    <title>MeshTUI - Terminal UI for MeshCore Radios</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="container">
+                <div class="logo">
+                    <span class="terminal-icon">$</span>
+                    <span class="logo-text">MeshTUI</span>
+                </div>
+                <div class="nav-links">
+                    <a href="#features">Features</a>
+                    <a href="#installation">Install</a>
+                    <a href="#usage">Usage</a>
+                    <a href="#docs">Docs</a>
+                    <a href="https://github.com/ekollof/meshtui" target="_blank" class="github-link">
+                        <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                        </svg>
+                        GitHub
+                    </a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="container">
+                <div class="hero-content">
+                    <h1>MeshTUI</h1>
+                    <p class="tagline">Terminal User Interface for MeshCore Companion Radios</p>
+                    <p class="subtitle">A modern, keyboard-driven TUI for managing mesh networks, sending messages, and monitoring device status — all in your terminal.</p>
+                    <div class="cta-buttons">
+                        <a href="#installation" class="btn btn-primary">Get Started</a>
+                        <a href="https://github.com/ekollof/meshtui" target="_blank" class="btn btn-secondary">View on GitHub</a>
+                    </div>
+                </div>
+                <div class="hero-terminal">
+                    <div class="terminal-window">
+                        <div class="terminal-header">
+                            <span class="dot dot-red"></span>
+                            <span class="dot dot-yellow"></span>
+                            <span class="dot dot-green"></span>
+                            <span class="terminal-title">meshtui</span>
+                        </div>
+                        <div class="terminal-body">
+                            <pre><span class="prompt">$</span> pipx install meshtui
+<span class="success">✓</span> Installed meshtui
+
+<span class="prompt">$</span> meshtui
+<span class="info">🚀 MeshTUI v0.1.2</span>
+<span class="info">📡 Connecting to device...</span>
+<span class="success">✓</span> Connected to MeshCore via serial
+<span class="success">✓</span> Found 5 contacts
+
+<span class="dim">Chat with mesh network contacts in your terminal!</span></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section id="features" class="features">
+            <div class="container">
+                <h2>Features</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">💬</div>
+                        <h3>Real-time Chat</h3>
+                        <p>Interactive chat interface with contacts and channels. Message history, delivery tracking, and ACK status.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📡</div>
+                        <h3>Multi-Connection</h3>
+                        <p>Connect via BLE, TCP, or Serial. Auto-detection of MeshCore devices with seamless switching.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔐</div>
+                        <h3>Channel Creation</h3>
+                        <p>Create custom encrypted channels with auto-hash support. Secure mesh communication made easy.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">⚡</div>
+                        <h3>Async Operations</h3>
+                        <p>Built with asyncio for responsive UI. Non-blocking operations keep the interface smooth.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🎯</div>
+                        <h3>Node Management</h3>
+                        <p>Remote control of repeaters and room servers. Full node administration from your terminal.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">💾</div>
+                        <h3>Message History</h3>
+                        <p>Persistent SQLite database per device. Browse history with delivery status and timestamps.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔄</div>
+                        <h3>Auto Retry</h3>
+                        <p>Automatic message retry with flood routing fallback. Intelligent delivery optimization.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🆕</div>
+                        <h3>TCP Proxy <span class="experimental">EXPERIMENTAL</span></h3>
+                        <p>Expose Serial/BLE devices over TCP for remote access. Test TCP mode without WiFi firmware.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Installation Section -->
+        <section id="installation" class="installation">
+            <div class="container">
+                <h2>Installation</h2>
+                <div class="install-methods">
+                    <div class="install-card">
+                        <h3>Quick Install (Recommended)</h3>
+                        <div class="code-block">
+                            <pre><code><span class="comment"># Install with pipx (isolated environment)</span>
+pipx install meshtui
+
+<span class="comment"># Or with uv</span>
+uv tool install meshtui</code></pre>
+                            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="install-card">
+                        <h3>With TCP Proxy Support</h3>
+                        <div class="code-block">
+                            <pre><code><span class="comment"># Install with optional proxy component</span>
+pipx install meshtui[proxy]</code></pre>
+                            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="install-card">
+                        <h3>Development Install</h3>
+                        <div class="code-block">
+                            <pre><code><span class="comment"># Clone and install for development</span>
+git clone https://github.com/ekollof/meshtui.git
+cd meshtui
+pip install -e .
+<span class="comment"># or: uv pip install -e .</span></code></pre>
+                            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="install-note">
+                    <h4>Requirements</h4>
+                    <ul>
+                        <li>Python 3.10 or higher</li>
+                        <li>Linux or macOS (Windows support untested)</li>
+                        <li>Serial port permissions for USB devices</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Usage Section -->
+        <section id="usage" class="usage">
+            <div class="container">
+                <h2>Usage</h2>
+                <div class="usage-grid">
+                    <div class="usage-example">
+                        <h3>Quick Start</h3>
+                        <div class="code-block">
+                            <pre><code><span class="comment"># Launch MeshTUI (auto-detect device)</span>
+meshtui
+
+<span class="comment"># Connect via serial</span>
+meshtui --serial /dev/ttyUSB0
+
+<span class="comment"># Connect via BLE</span>
+meshtui --address C2:2B:A1:D5:3E:B6
+
+<span class="comment"># Connect via TCP</span>
+meshtui --tcp localhost --port 5000</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="usage-example">
+                        <h3>TCP Proxy <span class="experimental">EXPERIMENTAL</span></h3>
+                        <div class="code-block">
+                            <pre><code><span class="comment"># Start proxy (expose serial device on TCP)</span>
+meshcore-tcp-proxy --serial /dev/ttyUSB0
+
+<span class="comment"># Connect meshtui via TCP (in another terminal)</span>
+meshtui --tcp localhost --port 5000
+
+<span class="comment"># Debug mode with frame logging</span>
+meshcore-tcp-proxy --serial /dev/ttyUSB0 --debug --log-frames</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="keyboard-shortcuts">
+                    <h3>Keyboard Shortcuts</h3>
+                    <div class="shortcuts-grid">
+                        <div class="shortcut">
+                            <kbd>Tab</kbd>
+                            <span>Switch between panels</span>
+                        </div>
+                        <div class="shortcut">
+                            <kbd>↑↓</kbd>
+                            <span>Navigate contacts/messages</span>
+                        </div>
+                        <div class="shortcut">
+                            <kbd>Enter</kbd>
+                            <span>Send message</span>
+                        </div>
+                        <div class="shortcut">
+                            <kbd>F1</kbd>
+                            <span>Show help</span>
+                        </div>
+                        <div class="shortcut">
+                            <kbd>Ctrl+C</kbd>
+                            <span>Quit application</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Documentation Section -->
+        <section id="docs" class="documentation">
+            <div class="container">
+                <h2>Documentation</h2>
+                <div class="docs-grid">
+                    <a href="https://github.com/ekollof/meshtui/blob/master/README.md" class="doc-card" target="_blank">
+                        <div class="doc-icon">📖</div>
+                        <h3>README</h3>
+                        <p>Complete project documentation, features, and examples</p>
+                    </a>
+                    <a href="https://github.com/ekollof/meshtui/blob/master/CLAUDE.md" class="doc-card" target="_blank">
+                        <div class="doc-icon">🏗️</div>
+                        <h3>Architecture Guide</h3>
+                        <p>Development guide, architecture overview, and code structure</p>
+                    </a>
+                    <a href="https://github.com/ekollof/meshtui/blob/master/docs/MESHCORE_TCP_PROXY_DESIGN.md" class="doc-card" target="_blank">
+                        <div class="doc-icon">🔌</div>
+                        <h3>TCP Proxy Design</h3>
+                        <p>Complete TCP proxy design document and implementation guide</p>
+                    </a>
+                    <a href="https://github.com/ekollof/meshtui/blob/master/CHANGES.md" class="doc-card" target="_blank">
+                        <div class="doc-icon">📝</div>
+                        <h3>Changelog</h3>
+                        <p>Release notes and version history</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            <div class="container">
+                <div class="footer-content">
+                    <div class="footer-section">
+                        <h4>MeshTUI</h4>
+                        <p>Terminal User Interface for MeshCore companion radios</p>
+                        <p class="license">MIT License © 2024</p>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Links</h4>
+                        <ul>
+                            <li><a href="https://github.com/ekollof/meshtui" target="_blank">GitHub Repository</a></li>
+                            <li><a href="https://github.com/ekollof/meshtui/issues" target="_blank">Issue Tracker</a></li>
+                            <li><a href="https://pypi.org/project/meshtui/" target="_blank">PyPI Package</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Related Projects</h4>
+                        <ul>
+                            <li><a href="https://github.com/fdlamotte/meshcore_py" target="_blank">meshcore_py</a></li>
+                            <li><a href="https://github.com/Textualize/textual" target="_blank">Textual Framework</a></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <p>Built with ❤️ using <a href="https://github.com/Textualize/textual" target="_blank">Textual</a></p>
+                </div>
+            </div>
+        </footer>
+    </main>
+
+    <script>
+        // Copy code to clipboard
+        function copyCode(button) {
+            const codeBlock = button.previousElementSibling;
+            const code = codeBlock.textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                button.textContent = 'Copied!';
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                }, 2000);
+            });
+        }
+
+        // Smooth scrolling
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
