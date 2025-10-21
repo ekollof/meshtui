@@ -1528,11 +1528,12 @@ class MeshConnection:
     def has_gps(self) -> bool:
         """Check if the connected device has GPS available.
 
-        Detects GPS by checking if the device has non-zero coordinates in self_info
-        or if location telemetry mode is enabled.
+        Detects GPS by checking if location telemetry mode is enabled.
+        Note: Coordinates alone are not reliable since they can be set manually
+        via set_coords() even without GPS hardware.
 
         Returns:
-            True if device appears to have GPS, False otherwise
+            True if device appears to have GPS hardware, False otherwise
         """
         if not self.meshcore or not hasattr(self.meshcore, "self_info"):
             return False
@@ -1542,16 +1543,31 @@ class MeshConnection:
             return False
 
         # Check if location telemetry mode is enabled (indicates GPS capability)
+        # telemetry_mode_loc values:
+        # 0 = Disabled (no GPS or GPS not active)
+        # 1 = Enabled (GPS hardware present and active)
+        # 2+ = Other modes
         telemetry_mode_loc = self_info.get("telemetry_mode_loc", 0)
-        if telemetry_mode_loc > 0:
-            return True
 
-        # Check if device has non-zero coordinates (indicates GPS data)
+        # Also get coordinates for logging purposes
         lat = self_info.get("adv_lat", 0)
         lon = self_info.get("adv_lon", 0)
 
-        # Consider GPS available if coordinates are not (0, 0)
-        return lat != 0 or lon != 0
+        # Debug logging to see actual values
+        self.logger.debug(
+            f"GPS detection: telemetry_mode_loc={telemetry_mode_loc}, "
+            f"lat={lat}, lon={lon}"
+        )
+
+        if telemetry_mode_loc > 0:
+            self.logger.debug("GPS detected: location telemetry mode is enabled")
+            return True
+        else:
+            self.logger.debug(
+                "No GPS detected: location telemetry mode is disabled "
+                "(coordinates may be manually set)"
+            )
+            return False
 
     async def auto_sync_time_if_needed(self) -> None:
         """Automatically sync device time if GPS is not available.
