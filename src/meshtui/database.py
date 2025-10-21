@@ -31,7 +31,8 @@ class MessageDatabase:
             cursor = self.conn.cursor()
 
             # Messages table
-            # Uses pubkey-based lookups for robustness against name changes
+            # Uses public_key-based lookups for robustness against name changes
+            # Note: sender_pubkey and recipient_pubkey store public keys from meshcore API
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS messages (
@@ -60,22 +61,27 @@ class MessageDatabase:
             )
 
             # Contacts table
+            # Field naming convention: "public_key" matches meshcore API (reader.py line 81)
+            # This is the canonical identifier for contacts throughout the codebase
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS contacts (
-                    pubkey TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    adv_name TEXT,
-                    type INTEGER,
-                    is_me INTEGER DEFAULT 0,
-                    last_seen INTEGER NOT NULL,
-                    first_seen INTEGER NOT NULL,
-                    raw_data TEXT
+                    public_key TEXT PRIMARY KEY,  -- Canonical field name from meshcore API
+                    name TEXT NOT NULL,           -- Display name
+                    adv_name TEXT,                -- Advertised name
+                    type INTEGER,                 -- Node type: 0=Companion, 1=Companion, 2=Repeater, 3=Room Server, 4=Sensor
+                    is_me INTEGER DEFAULT 0,      -- 1 if this is the current user's contact
+                    last_seen INTEGER NOT NULL,   -- Unix timestamp
+                    first_seen INTEGER NOT NULL,  -- Unix timestamp
+                    raw_data TEXT,                -- JSON of full contact data
+                    notes TEXT DEFAULT ''         -- User notes for this contact
                 )
             """
             )
 
-            # Last read tracking table - now uses pubkey for contacts, name for channels
+            # Last read tracking table - uses public_key for contacts, name for channels
+            # identifier: contact public_key OR channel name (e.g., "Public", "Channel 1")
+            # identifier_type: "contact" or "channel"
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS last_read (
@@ -173,7 +179,52 @@ class MessageDatabase:
                 self.conn.commit()
                 self.logger.info("Migration complete: recipient_pubkey column added")
 
-            # Check if contacts table has notes column
+            # Check if contacts table still uses old "pubkey" column name
+            cursor.execute("PRAGMA table_info(contacts)")
+            contact_columns = [row[1] for row in cursor.fetchall()]
+
+            if "pubkey" in contact_columns and "public_key" not in contact_columns:
+                self.logger.info("Migrating database: renaming pubkey column to public_key")
+                # SQLite doesn't support column rename in older versions, so we need to recreate
+                # Create new table with correct schema
+                cursor.execute(
+                    """
+                    CREATE TABLE contacts_new (
+                        public_key TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        adv_name TEXT,
+                        type INTEGER,
+                        is_me INTEGER DEFAULT 0,
+                        last_seen INTEGER NOT NULL,
+                        first_seen INTEGER NOT NULL,
+                        raw_data TEXT,
+                        notes TEXT DEFAULT ''
+                    )
+                """
+                )
+                # Copy data from old table
+                cursor.execute(
+                    """
+                    INSERT INTO contacts_new
+                    SELECT pubkey, name, adv_name, type, is_me, last_seen, first_seen, raw_data,
+                           COALESCE(notes, '') as notes
+                    FROM contacts
+                """
+                )
+                # Drop old table and rename new one
+                cursor.execute("DROP TABLE contacts")
+                cursor.execute("ALTER TABLE contacts_new RENAME TO contacts")
+                # Recreate index
+                cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_contacts_name
+                    ON contacts(name)
+                """
+                )
+                self.conn.commit()
+                self.logger.info("Migration complete: pubkey renamed to public_key")
+
+            # Check if contacts table has notes column (for databases that already have public_key)
             cursor.execute("PRAGMA table_info(contacts)")
             contact_columns = [row[1] for row in cursor.fetchall()]
 
@@ -356,9 +407,9 @@ class MessageDatabase:
         try:
             cursor = self.conn.cursor()
 
-            pubkey = contact_data.get("public_key") or contact_data.get("pubkey", "")
+            pubkey = contact_data.get("public_key", "")
             if not pubkey:
-                self.logger.warning("Contact has no pubkey, skipping storage")
+                self.logger.warning("Contact has no public_key, skipping storage")
                 return False
 
             name = contact_data.get("name", "Unknown")
@@ -371,9 +422,9 @@ class MessageDatabase:
             # Insert or update (upsert)
             cursor.execute(
                 """
-                INSERT INTO contacts (pubkey, name, adv_name, type, is_me, last_seen, first_seen, raw_data)
+                INSERT INTO contacts (public_key, name, adv_name, type, is_me, last_seen, first_seen, raw_data)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(pubkey) DO UPDATE SET
+                ON CONFLICT(public_key) DO UPDATE SET
                     name = excluded.name,
                     adv_name = excluded.adv_name,
                     type = excluded.type,
@@ -407,7 +458,7 @@ class MessageDatabase:
             cursor = self.conn.cursor()
 
             # Delete the contact
-            cursor.execute("DELETE FROM contacts WHERE pubkey = ?", (pubkey,))
+            cursor.execute("DELETE FROM contacts WHERE public_key = ?", (pubkey,))
 
             # Also delete all messages associated with this contact
             cursor.execute(
@@ -460,11 +511,11 @@ class MessageDatabase:
                 self.logger.warning(f"Contact not found: {contact_name_or_pubkey}")
                 return []
 
-            pubkey = contact["pubkey"]
+            pubkey = contact["public_key"]
             is_room = contact.get("type") == 3
 
             # Get "me" contact to identify our own messages
-            cursor.execute("SELECT pubkey FROM contacts WHERE is_me = 1")
+            cursor.execute("SELECT public_key FROM contacts WHERE is_me = 1")
             me_row = cursor.fetchone()
             _ = me_row[0] if me_row else None  # my_pubkey for future use
 
@@ -571,7 +622,7 @@ class MessageDatabase:
             # Try exact match first
             cursor.execute(
                 """
-                SELECT * FROM contacts WHERE pubkey = ?
+                SELECT * FROM contacts WHERE public_key = ?
             """,
                 (pubkey,),
             )
@@ -583,7 +634,7 @@ class MessageDatabase:
             # Try prefix match
             cursor.execute(
                 """
-                SELECT * FROM contacts WHERE pubkey LIKE ? || '%'
+                SELECT * FROM contacts WHERE public_key LIKE ? || '%'
                 ORDER BY last_seen DESC
                 LIMIT 1
             """,
@@ -709,7 +760,7 @@ class MessageDatabase:
                 contact = dict(row) if row else None
 
             if contact:
-                identifier = contact["pubkey"]
+                identifier = contact["public_key"]
                 identifier_type = "contact"
             else:
                 # For channels, keep the name as-is (e.g., "Public", "Channel 1")
@@ -760,7 +811,7 @@ class MessageDatabase:
                 contact = dict(row) if row else None
 
             if contact:
-                identifier = contact["pubkey"]
+                identifier = contact["public_key"]
                 pubkey = identifier
 
             # Get last read timestamp
@@ -876,7 +927,7 @@ class MessageDatabase:
             cursor = self.conn.cursor()
             cursor.execute(
                 """
-                SELECT * FROM contacts WHERE pubkey = ?
+                SELECT * FROM contacts WHERE public_key = ?
             """,
                 (pubkey,),
             )
@@ -901,7 +952,7 @@ class MessageDatabase:
             cursor = self.conn.cursor()
             cursor.execute(
                 """
-                SELECT notes FROM contacts WHERE pubkey = ?
+                SELECT notes FROM contacts WHERE public_key = ?
             """,
                 (pubkey,),
             )
@@ -927,7 +978,7 @@ class MessageDatabase:
             cursor = self.conn.cursor()
             cursor.execute(
                 """
-                UPDATE contacts SET notes = ? WHERE pubkey = ?
+                UPDATE contacts SET notes = ? WHERE public_key = ?
             """,
                 (notes, pubkey),
             )

@@ -128,9 +128,7 @@ class RoomManager:
             return False
 
         try:
-            pubkey = (
-                contact.get("public_key") or contact.get("pubkey") or contact.get("id")
-            )
+            pubkey = contact.get("public_key")
 
             # If already logged in, logout first to avoid session conflicts
             if self.is_logged_in(room_name):
@@ -161,7 +159,7 @@ class RoomManager:
                 self.logged_in_rooms[room_name] = True
 
                 # Store pubkey mappings for message routing
-                room_key = contact.get("public_key") or contact.get("pubkey", "")
+                room_key = contact.get("public_key", "")
                 self.room_pubkeys[room_name] = room_key
                 pubkey_prefix = room_key[:12] if len(room_key) >= 12 else room_key
                 self.pubkey_to_room[pubkey_prefix] = room_name

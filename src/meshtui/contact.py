@@ -191,9 +191,7 @@ class ContactManager:
                 return None
 
             # Try to get the recipient identifier
-            recipient = (
-                contact.get("public_key") or contact.get("pubkey") or contact.get("id")
-            )
+            recipient = contact.get("public_key")
             if not recipient:
                 self.logger.error(
                     f"Contact '{recipient_name}' has no public_key/id field"

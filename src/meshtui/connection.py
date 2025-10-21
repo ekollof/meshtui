@@ -566,7 +566,7 @@ class MeshConnection:
 
         # Store new contact immediately
         contact_data = event.payload or {}
-        if self.db and (contact_data.get("public_key") or contact_data.get("pubkey")):
+        if self.db and contact_data.get("public_key"):
             self.db.store_contact(contact_data, is_me=False)
             self.logger.info(
                 f"Stored new contact: {contact_data.get('name', 'Unknown')}"
@@ -581,7 +581,7 @@ class MeshConnection:
 
         # Extract contact info from advertisement
         adv_data = event.payload or {}
-        pubkey = adv_data.get("pubkey") or adv_data.get("public_key")
+        pubkey = adv_data.get("public_key")
 
         if pubkey and self.contacts:
             # Try to find this contact
@@ -596,7 +596,6 @@ class MeshConnection:
                 # New contact from advertisement - create minimal contact record
                 contact_data = {
                     "public_key": pubkey,
-                    "pubkey": pubkey,
                     "name": adv_data.get("name", pubkey[:12]),
                     "adv_name": adv_data.get(
                         "adv_name", adv_data.get("name", pubkey[:12])
@@ -751,7 +750,7 @@ class MeshConnection:
                 # Try to find by name we extracted
                 contact = self.contacts.get_by_name(sender_name)
                 if contact:
-                    sender_key = contact.get("public_key") or contact.get("pubkey", "")
+                    sender_key = contact.get("public_key", "")
 
         channel_idx = msg_data.get("channel_idx", msg_data.get("channel", 0))
         channel_name = f"Channel {channel_idx}" if channel_idx != 0 else "Public"
@@ -1012,13 +1011,9 @@ class MeshConnection:
                     self._check_message_timeout(ack_code_hex, suggested_timeout)
                 )
 
-            # Look up contact to get pubkey for storage
+            # Look up contact to get public_key for storage
             contact = self.contacts.get_by_name(recipient_name)
-            recipient_pubkey = (
-                contact.get("public_key") or contact.get("pubkey") or contact.get("id")
-                if contact
-                else ""
-            )
+            recipient_pubkey = contact.get("public_key", "") if contact else ""
 
             # Determine message type based on recipient type
             is_room = contact and contact.get("type") == 3  # Type 3 = Room Server
@@ -1177,7 +1172,7 @@ class MeshConnection:
                 return False
 
             # Get the room's public key
-            room_key = contact.get("public_key") or contact.get("pubkey")
+            room_key = contact.get("public_key")
             if not room_key:
                 self.logger.error(f"Room '{room_name}' has no public_key")
                 return False
@@ -1805,8 +1800,8 @@ class MeshConnection:
     async def ping_contact(self, contact_name: str) -> Dict[str, Any]:
         """Ping a contact to test connectivity.
 
-        Sends a short message and waits for acknowledgment.
-        This is the most reliable way to test if a contact is reachable.
+        Sends a status request (not a message) and waits for acknowledgment.
+        Uses send_statusreq which doesn't create a visible message.
 
         Args:
             contact_name: Name of the contact to ping
@@ -1830,19 +1825,17 @@ class MeshConnection:
                     "error": f"Contact '{contact_name}' not found",
                 }
 
-            pubkey = (
-                contact.get("public_key") or contact.get("pubkey") or contact.get("id")
-            )
+            pubkey = contact.get("public_key")
             if not pubkey:
                 return {"success": False, "error": "Contact has no public key"}
 
             self.logger.info(f"Pinging {contact_name} ({pubkey[:16]}...)")
 
-            # Send a ping message and wait for ACK
+            # Send a status request (doesn't create a visible message)
             start_time = time.time()
 
-            # Send the message - this returns MSG_SENT with expected_ack
-            result = await self.meshcore.commands.send_msg(pubkey, "ping")
+            # Use send_statusreq instead of send_msg - this doesn't send a message
+            result = await self.meshcore.commands.send_statusreq(pubkey)
 
             if result.type == EventType.ERROR:
                 return {
@@ -1890,6 +1883,160 @@ class MeshConnection:
             self.logger.error(f"Error pinging {contact_name}: {e}")
             import traceback
 
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
+
+    async def trace_path_to_contact(self, contact_name: str) -> Dict[str, Any]:
+        """Trace the routing path to a contact.
+
+        First checks if path is already known from contact data,
+        otherwise sends path discovery request.
+
+        Args:
+            contact_name: Name of the contact to trace
+
+        Returns:
+            Dict with trace result:
+            - success: bool - whether path was discovered
+            - path: List[str] - list of repeater names in the path
+            - latency: float - round trip time in seconds (if successful)
+            - cached: bool - whether this is from cached contact data
+            - error: str - error message (if failed)
+        """
+
+        if not self.meshcore or not self.contacts:
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            # Get contact
+            contact = self.contacts.get_by_name(contact_name)
+            if not contact:
+                return {
+                    "success": False,
+                    "error": f"Contact '{contact_name}' not found",
+                }
+
+            pubkey = contact.get("public_key")
+            if not pubkey:
+                return {"success": False, "error": "Contact has no public key"}
+
+            self.logger.info(f"Tracing path to {contact_name} ({pubkey[:16]}...)")
+
+            # Check if we already have path information in the contact
+            out_path_len = contact.get("out_path_len", 0)
+            out_path = contact.get("out_path", "")
+
+            # Use match/case for cleaner path type handling (Python 3.10+)
+            match out_path_len:
+                case -1:
+                    # Flood routing (no specific path)
+                    self.logger.debug("Contact uses flood routing (no fixed path)")
+                    return {
+                        "success": True,
+                        "path": [],
+                        "cached": True,
+                    }
+                case 0:
+                    # Direct connection (no repeaters)
+                    self.logger.debug("Direct connection (no repeaters)")
+                    return {
+                        "success": True,
+                        "path": [],
+                        "cached": True,
+                    }
+                case _ if out_path_len > 0 and out_path:
+                    # We have cached path information
+                    self.logger.debug(f"Using cached path: len={out_path_len}, path={out_path}")
+
+                    # Parse the path hex string into repeater hashes
+                    path_names = []
+                    # Each hop is 1 byte (2 hex chars)
+                    for i in range(0, len(out_path), 2):
+                        if i >= out_path_len * 2:
+                            break
+                        hop_hash = out_path[i:i+2]
+                        # Try to find contact with this hash prefix
+                        hop_contact = self.contacts.get_by_key(hop_hash)
+                        if hop_contact:
+                            path_names.append(hop_contact.get("name", f"#{hop_hash}"))
+                        else:
+                            path_names.append(f"#{hop_hash}")
+
+                    return {
+                        "success": True,
+                        "path": path_names,
+                        "cached": True,
+                    }
+                case _:
+                    # Unknown path - need to discover
+                    self.logger.debug("No cached path available, initiating discovery")
+
+            # Send path discovery request
+            start_time = time.time()
+
+            self.logger.debug(f"Sending path discovery request to {pubkey[:16]}...")
+            result = await self.meshcore.commands.send_path_discovery(pubkey)
+
+            self.logger.debug(f"Path discovery result: {result.type}, payload: {result.payload if hasattr(result, 'payload') else 'N/A'}")
+
+            if result.type == EventType.ERROR:
+                error_msg = result.payload if hasattr(result, 'payload') else 'unknown error'
+                self.logger.error(f"Failed to send path discovery: {error_msg}")
+                return {
+                    "success": False,
+                    "error": f"Failed to send path discovery: {error_msg}",
+                }
+
+            # Wait for PATH_RESPONSE event
+            self.logger.debug("Waiting for PATH_RESPONSE event...")
+            try:
+                path_response = await self.meshcore.dispatcher.wait_for_event(
+                    EventType.PATH_RESPONSE,
+                    timeout=10.0
+                )
+
+                self.logger.debug(f"Received PATH_RESPONSE: {path_response}")
+                latency = time.time() - start_time
+
+                if path_response and path_response.payload:
+                    # Extract path from response
+                    path_data = path_response.payload.get("path", [])
+
+                    # Convert path to readable format (contact names if available)
+                    path_names = []
+                    for hop_pubkey in path_data:
+                        # Look up contact by pubkey
+                        hop_contact = self.contacts.get_by_key(hop_pubkey)
+                        if hop_contact:
+                            path_names.append(hop_contact.get("name", hop_pubkey[:12]))
+                        else:
+                            path_names.append(hop_pubkey[:12] + "...")
+
+                    self.logger.info(f"✓ Path to {contact_name}: {' → '.join(path_names)} ({latency:.2f}s)")
+                    return {
+                        "success": True,
+                        "path": path_names,
+                        "latency": latency,
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": "No path response received",
+                    }
+
+            except asyncio.TimeoutError:
+                latency = time.time() - start_time
+                self.logger.warning(
+                    f"✗ Path discovery timeout to {contact_name} after {latency:.1f}s"
+                )
+                return {
+                    "success": False,
+                    "error": f"Timeout after {latency:.1f}s - path discovery failed",
+                }
+
+        except Exception as e:
+            self.logger.error(f"Error tracing path to {contact_name}: {e}")
+            import traceback
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return {"success": False, "error": str(e)}
 
