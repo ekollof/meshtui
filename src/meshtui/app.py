@@ -178,13 +178,49 @@ class MeshTUI(App):
                                     placeholder="Type message or command...",
                                     id="message-input",
                                 )
-                                yield Button("Ping", id="ping-btn", variant="default")
+                                yield Button("Send", id="send-btn", variant="primary")
+
+                    with TabPane("Contact Info", id="contact-info-tab"):
+                        # Contact information and management
+                        with Vertical(id="contact-info-container"):
+                            yield Static("Contact Information", id="contact-info-header")
+                            yield Static(
+                                "Select a contact to view details",
+                                id="contact-info-status",
+                                classes="help-text",
+                            )
+
+                            # Contact details section
+                            yield Static("[bold]Contact Details[/bold]", classes="section-title")
+                            with Horizontal():
+                                yield Static("Name:", classes="label")
+                                yield Static("", id="contact-name-display")
+                            with Horizontal():
+                                yield Static("Public Key:", classes="label")
+                                yield Static("", id="contact-pubkey-display")
+                            with Horizontal():
+                                yield Static("Type:", classes="label")
+                                yield Static("", id="contact-type-display")
+
+                            # Notes section
+                            yield Static("[bold]Notes[/bold]", classes="section-title")
+                            yield Static(
+                                "Personal notes about this contact (saved locally)",
+                                classes="help-text",
+                            )
+                            from textual.widgets import TextArea
+                            yield TextArea(id="contact-notes-input", language="markdown")
+                            yield Button("Save Notes", id="save-notes-btn", variant="primary")
+
+                            # Actions section
+                            yield Static("[bold]Actions[/bold]", classes="section-title")
+                            with Horizontal():
+                                yield Button("Ping Contact", id="ping-btn", variant="default")
                                 yield Button(
                                     "Delete Contact",
                                     id="delete-contact-btn",
                                     variant="error",
                                 )
-                                yield Button("Send", id="send-btn", variant="primary")
 
                     with TabPane("Device Settings", id="settings-tab"):
                         # Device configuration area
@@ -380,6 +416,14 @@ class MeshTUI(App):
         self.chat_area = self.query_one("#chat-area", RichLog)
         self.message_input = self.query_one("#message-input", Input)
         self.log_panel = self.query_one("#log-panel", Log)
+
+        # Contact Info UI references
+        from textual.widgets import TextArea
+        self.contact_name_display = self.query_one("#contact-name-display", Static)
+        self.contact_pubkey_display = self.query_one("#contact-pubkey-display", Static)
+        self.contact_type_display = self.query_one("#contact-type-display", Static)
+        self.contact_notes_input = self.query_one("#contact-notes-input", TextArea)
+        self.contact_info_status = self.query_one("#contact-info-status", Static)
 
         # Device settings UI references
         self.settings_name_input = self.query_one("#settings-name-input", Input)
@@ -1487,6 +1531,9 @@ class MeshTUI(App):
             # Load message history for this contact
             await self.load_contact_messages(contact_name)
 
+            # Load contact info for Contact Info tab
+            await self.load_contact_info(contact_name)
+
             # Focus the message input
             self.message_input.focus()
 
@@ -1712,6 +1759,68 @@ class MeshTUI(App):
                 self.chat_area.write("[dim]No message history[/dim]")
         except Exception as e:
             self.logger.error(f"Error loading channel messages: {e}")
+
+    async def load_contact_info(self, contact_name: str) -> None:
+        """Load contact information into the Contact Info tab."""
+        try:
+            contact = self.connection.get_contact_by_name(contact_name)
+            if not contact:
+                self.contact_info_status.update("Contact not found")
+                return
+
+            # Update contact details
+            self.contact_name_display.update(contact_name)
+            pubkey = contact.get("pubkey", "N/A")
+            self.contact_pubkey_display.update(pubkey[:16] + "..." if len(pubkey) > 16 else pubkey)
+
+            # Contact type mapping
+            contact_type = contact.get("type", 0)
+            type_map = {
+                0: "Companion",
+                1: "Router",
+                2: "Repeater",
+                3: "Room Server",
+                4: "Sensor"
+            }
+            self.contact_type_display.update(type_map.get(contact_type, f"Unknown ({contact_type})"))
+
+            # Load notes from database
+            notes = self.connection.db.get_contact_notes(pubkey) if pubkey != "N/A" else ""
+            self.contact_notes_input.load_text(notes)
+
+            self.contact_info_status.update(f"Viewing contact: {contact_name}")
+        except Exception as e:
+            self.logger.error(f"Error loading contact info: {e}")
+            self.contact_info_status.update(f"Error loading contact info: {e}")
+
+    @on(Button.Pressed, "#save-notes-btn")
+    async def save_contact_notes(self) -> None:
+        """Save notes for the current contact."""
+        if not self.current_contact:
+            self.contact_info_status.update("No contact selected")
+            return
+
+        try:
+            contact = self.connection.get_contact_by_name(self.current_contact)
+            if not contact:
+                self.contact_info_status.update("Contact not found")
+                return
+
+            pubkey = contact.get("pubkey")
+            if not pubkey:
+                self.contact_info_status.update("Contact has no public key")
+                return
+
+            notes = self.contact_notes_input.text
+            success = self.connection.db.set_contact_notes(pubkey, notes)
+
+            if success:
+                self.contact_info_status.update(f"Notes saved for {self.current_contact}")
+            else:
+                self.contact_info_status.update("Failed to save notes")
+        except Exception as e:
+            self.logger.error(f"Error saving contact notes: {e}")
+            self.contact_info_status.update(f"Error: {e}")
 
     async def update_contacts(self) -> None:
         """Update the contacts list in the UI."""

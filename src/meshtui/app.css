@@ -153,20 +153,8 @@ RichLog {
     margin: 1;
 }
 
-#ping-btn {
-    width: 8;
-    height: 3;
-    margin: 1 0 1 0;
-}
-
-#delete-contact-btn {
-    width: 12;
-    height: 3;
-    margin: 1 0 1 0;
-}
-
 #send-btn {
-    width: 8;
+    width: 10;
     height: 3;
     margin: 1 1 1 0;
 }
@@ -409,6 +397,60 @@ TextArea:focus {
     width: 1fr;
     height: 3;
     margin: 0 1;
+}
+
+/* Contact Info Tab Styles */
+#contact-info-container {
+    height: 100%;
+    width: 100%;
+    layout: vertical;
+    background: $panel;
+}
+
+#contact-info-header {
+    height: 3;
+    background: $primary;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    border-bottom: solid $primary;
+    margin: 1 1 0 1;
+}
+
+#contact-info-status {
+    margin: 0 1 1 1;
+}
+
+#contact-name-display,
+#contact-pubkey-display,
+#contact-type-display {
+    width: 1fr;
+    margin: 1 1 1 0;
+}
+
+#contact-notes-input {
+    height: 15;
+    background: $surface;
+    border: solid $primary;
+    margin: 1;
+    padding: 1;
+}
+
+#save-notes-btn {
+    height: 3;
+    margin: 0 1 1 1;
+}
+
+#ping-btn {
+    width: 50%;
+    height: 3;
+    margin: 1 0 1 1;
+}
+
+#delete-contact-btn {
+    width: 50%;
+    height: 3;
+    margin: 1 1 1 0;
 }
 
 /* Help text styling */

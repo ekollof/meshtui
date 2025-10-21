@@ -173,6 +173,16 @@ class MessageDatabase:
                 self.conn.commit()
                 self.logger.info("Migration complete: recipient_pubkey column added")
 
+            # Check if contacts table has notes column
+            cursor.execute("PRAGMA table_info(contacts)")
+            contact_columns = [row[1] for row in cursor.fetchall()]
+
+            if "notes" not in contact_columns:
+                self.logger.info("Migrating database: adding notes column to contacts")
+                cursor.execute("ALTER TABLE contacts ADD COLUMN notes TEXT DEFAULT ''")
+                self.conn.commit()
+                self.logger.info("Migration complete: notes column added to contacts")
+
             # Check if last_read has new schema
             cursor.execute("PRAGMA table_info(last_read)")
             columns = [row[1] for row in cursor.fetchall()]
@@ -877,6 +887,57 @@ class MessageDatabase:
         except Exception as e:
             self.logger.error(f"Failed to get contact: {e}")
             return None
+
+    def get_contact_notes(self, pubkey: str) -> str:
+        """Get notes for a contact.
+
+        Args:
+            pubkey: Public key of the contact
+
+        Returns:
+            Notes string (empty string if none)
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                """
+                SELECT notes FROM contacts WHERE pubkey = ?
+            """,
+                (pubkey,),
+            )
+
+            row = cursor.fetchone()
+            return row[0] if row and row[0] else ""
+
+        except Exception as e:
+            self.logger.error(f"Failed to get contact notes: {e}")
+            return ""
+
+    def set_contact_notes(self, pubkey: str, notes: str) -> bool:
+        """Set notes for a contact.
+
+        Args:
+            pubkey: Public key of the contact
+            notes: Notes text to save
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                """
+                UPDATE contacts SET notes = ? WHERE pubkey = ?
+            """,
+                (notes, pubkey),
+            )
+            self.conn.commit()
+            self.logger.debug(f"Updated notes for contact {pubkey}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to set contact notes: {e}")
+            return False
 
     def close(self):
         """Close database connection."""
