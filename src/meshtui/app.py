@@ -115,7 +115,8 @@ class MeshTUI(App):
         super().__init__()
         self.args = args
         self.connection = MeshConnection()
-        self.current_contact = None
+        self.current_contact = None  # Contact name (for display/compatibility)
+        self.current_contact_pubkey = None  # Contact public_key (canonical identifier)
         self.current_channel = None
         self._awaiting_room_password = False  # Flag for room password input
         self._contact_id_map = {}  # Map sanitized IDs back to contact names
@@ -178,13 +179,66 @@ class MeshTUI(App):
                                     placeholder="Type message or command...",
                                     id="message-input",
                                 )
+                                yield Button("Send", id="send-btn", variant="primary")
+
+                    with TabPane("Contact Info", id="contact-info-tab"):
+                        # Contact information and management (scrollable)
+                        from textual.containers import VerticalScroll
+                        with VerticalScroll(id="contact-info-container"):
+                            yield Static("Contact Information", id="contact-info-header")
+                            yield Static(
+                                "Select a contact to view details",
+                                id="contact-info-status",
+                                classes="help-text",
+                            )
+
+                            # Two-column layout: Contact details + Network path
+                            with Horizontal(id="contact-details-row"):
+                                # Left column: Contact details
+                                with Vertical(id="contact-details-column"):
+                                    yield Static("[bold]Contact Details[/bold]", classes="section-title")
+                                    with Horizontal():
+                                        yield Static("Name:", classes="label")
+                                        yield Static("", id="contact-name-display")
+                                    with Horizontal():
+                                        yield Static("Public Key:", classes="label")
+                                        yield Static("", id="contact-pubkey-display")
+                                    with Horizontal():
+                                        yield Static("Type:", classes="label")
+                                        yield Static("", id="contact-type-display")
+                                    with Horizontal():
+                                        yield Static("Last Seen:", classes="label")
+                                        yield Static("", id="contact-lastseen-display")
+
+                                # Right column: Network path info
+                                with Vertical(id="contact-network-column"):
+                                    yield Static("[bold]Network Path[/bold]", classes="section-title")
+                                    yield Static(
+                                        "Routing path to this contact",
+                                        classes="help-text",
+                                    )
+                                    yield Static("Click 'Trace Path' to discover route", id="contact-path-display")
+                                    yield Button("Trace Path", id="trace-path-btn", variant="default")
+
+                            # Notes section (full width)
+                            yield Static("[bold]Notes[/bold]", classes="section-title")
+                            yield Static(
+                                "Personal notes about this contact (saved locally)",
+                                classes="help-text",
+                            )
+                            from textual.widgets import TextArea
+                            yield TextArea(id="contact-notes-input", language="markdown")
+                            yield Button("Save Notes", id="save-notes-btn", variant="primary")
+
+                            # Actions section
+                            yield Static("[bold]Actions[/bold]", classes="section-title")
+                            with Horizontal():
                                 yield Button("Ping", id="ping-btn", variant="default")
                                 yield Button(
                                     "Delete Contact",
                                     id="delete-contact-btn",
                                     variant="error",
                                 )
-                                yield Button("Send", id="send-btn", variant="primary")
 
                     with TabPane("Device Settings", id="settings-tab"):
                         # Device configuration area
@@ -380,6 +434,19 @@ class MeshTUI(App):
         self.chat_area = self.query_one("#chat-area", RichLog)
         self.message_input = self.query_one("#message-input", Input)
         self.log_panel = self.query_one("#log-panel", Log)
+
+        # Tab references for showing/hiding
+        self.tabbed_content = self.query_one(TabbedContent)
+
+        # Contact Info UI references
+        from textual.widgets import TextArea
+        self.contact_name_display = self.query_one("#contact-name-display", Static)
+        self.contact_pubkey_display = self.query_one("#contact-pubkey-display", Static)
+        self.contact_type_display = self.query_one("#contact-type-display", Static)
+        self.contact_lastseen_display = self.query_one("#contact-lastseen-display", Static)
+        self.contact_path_display = self.query_one("#contact-path-display", Static)
+        self.contact_notes_input = self.query_one("#contact-notes-input", TextArea)
+        self.contact_info_status = self.query_one("#contact-info-status", Static)
 
         # Device settings UI references
         self.settings_name_input = self.query_one("#settings-name-input", Input)
@@ -1317,7 +1384,7 @@ class MeshTUI(App):
 
     @on(Button.Pressed, "#ping-btn")
     async def ping_contact(self) -> None:
-        """Ping the currently selected contact to test connectivity."""
+        """Test connectivity to contact using path discovery for RTT measurement."""
         if not self.current_contact:
             self.chat_area.write(
                 "[yellow]No contact selected. Select a contact first.[/yellow]"
@@ -1328,36 +1395,115 @@ class MeshTUI(App):
             self.chat_area.write("[red]Not connected to device[/red]")
             return
 
-        self.chat_area.write(f"[dim]Pinging {self.current_contact}...[/dim]")
+        self.chat_area.write(f"[dim]Testing connectivity to {self.current_contact}...[/dim]")
 
         try:
-            result = await self.connection.ping_contact(self.current_contact)
+            # Use path discovery which includes RTT measurement
+            # This is more reliable than send_statusreq
+            result = await self.connection.trace_path_to_contact(self.current_contact)
 
             if result["success"]:
-                latency_ms = result["latency"] * 1000
-                self.chat_area.write(
-                    f"[green]✓ {self.current_contact} is reachable! Latency: {latency_ms:.0f}ms[/green]"
-                )
+                is_cached = result.get("cached", False)
+                path = result.get("path", [])
+                hop_count = len(path)
 
-                # Show status info if available
-                if result.get("status"):
-                    status = result["status"]
-                    self.chat_area.write(
-                        f"[dim]Status: Battery {status.get('battery', 'N/A')}%, "
-                        f"SNR {status.get('snr', 'N/A')} dB[/dim]"
-                    )
+                if is_cached:
+                    # Show cached path info without RTT
+                    if hop_count == 0:
+                        self.chat_area.write(
+                            f"[green]✓ {self.current_contact} - Direct connection (cached)[/green]"
+                        )
+                    else:
+                        self.chat_area.write(
+                            f"[green]✓ {self.current_contact} reachable via {hop_count} hop{'s' if hop_count > 1 else ''}[/green]"
+                        )
+                        path_str = " → ".join(path)
+                        self.chat_area.write(f"[dim]Path: {path_str}[/dim]")
+                else:
+                    # Fresh discovery with RTT
+                    latency_ms = result.get("latency", 0) * 1000
+                    if hop_count == 0:
+                        self.chat_area.write(
+                            f"[green]✓ {self.current_contact} is reachable! RTT: {latency_ms:.0f}ms (direct)[/green]"
+                        )
+                    else:
+                        self.chat_area.write(
+                            f"[green]✓ {self.current_contact} is reachable! RTT: {latency_ms:.0f}ms ({hop_count} hop{'s' if hop_count > 1 else ''})[/green]"
+                        )
+                        path_str = " → ".join(path)
+                        self.chat_area.write(f"[dim]Path: {path_str}[/dim]")
             else:
                 error = result.get("error", "Unknown error")
-                self.chat_area.write(f"[red]✗ Ping failed: {error}[/red]")
+                self.chat_area.write(f"[red]✗ Connectivity test failed: {error}[/red]")
                 self.chat_area.write(
                     "[yellow]Contact may be out of range or offline[/yellow]"
                 )
 
         except Exception as e:
-            self.chat_area.write(f"[red]Error pinging contact: {e}[/red]")
+            self.chat_area.write(f"[red]Error testing connectivity: {e}[/red]")
             self.logger.error(f"Error in ping handler: {e}")
             import traceback
 
+            self.logger.debug(traceback.format_exc())
+
+    @on(Button.Pressed, "#trace-path-btn")
+    async def trace_path_to_contact(self) -> None:
+        """Trace the routing path to the currently selected contact."""
+        if not self.current_contact:
+            self.contact_path_display.update(
+                "[yellow]No contact selected[/yellow]"
+            )
+            return
+
+        if not self.connection or not self.connection.is_connected:
+            self.contact_path_display.update("[red]Not connected to device[/red]")
+            return
+
+        # Show in-progress indicator
+        self.contact_path_display.update(f"[dim]Tracing path to {self.current_contact}...[/dim]")
+
+        try:
+            result = await self.connection.trace_path_to_contact(self.current_contact)
+
+            if result["success"]:
+                path = result.get("path", [])
+                hop_count = len(path)
+                is_cached = result.get("cached", False)
+
+                if hop_count == 0:
+                    # Direct connection
+                    display_text = f"[green]✓ Direct connection[/green]"
+                else:
+                    # Path through repeaters
+                    path_str = " → ".join([f"[cyan]{hop}[/cyan]" for hop in path])
+                    display_text = f"[green]✓ {hop_count} hop{'s' if hop_count > 1 else ''}:[/green] {path_str} → [cyan]{self.current_contact}[/cyan]"
+
+                # Add latency if available (only for fresh discovery)
+                if result.get("latency"):
+                    latency_ms = result["latency"] * 1000
+                    display_text += f"\n[dim]Round-trip: {latency_ms:.0f}ms[/dim]"
+
+                # Indicate if cached
+                if is_cached:
+                    display_text += f"\n[dim](Last known path)[/dim]"
+                else:
+                    display_text += f"\n[dim](Freshly discovered)[/dim]"
+
+                self.contact_path_display.update(display_text)
+
+                # Also log to chat area for history
+                self.chat_area.write(f"[dim]Path {'retrieved' if is_cached else 'traced'} for {self.current_contact}[/dim]")
+            else:
+                error = result.get("error", "Unknown error")
+                self.contact_path_display.update(
+                    f"[red]✗ Trace failed:[/red] {error}\n"
+                    "[yellow]Contact may be out of range or path discovery failed[/yellow]"
+                )
+
+        except Exception as e:
+            self.contact_path_display.update(f"[red]Error: {e}[/red]")
+            self.logger.error(f"Error in trace path handler: {e}")
+            import traceback
             self.logger.debug(traceback.format_exc())
 
     @on(Button.Pressed, "#delete-contact-btn")
@@ -1392,6 +1538,7 @@ class MeshTUI(App):
 
                 # Clear selection and chat area
                 self.current_contact = None
+                self.current_contact_pubkey = None
                 self.chat_area.clear()
 
                 # Update the UI to reflect the deleted contact
@@ -1424,15 +1571,37 @@ class MeshTUI(App):
             self.logger.info(
                 f"Selected contact: {contact_name} (from ID: {event.item.id})"
             )
+
+            # Get the contact to extract public_key for reliable lookups
+            contact = self.connection.get_contact_by_name(contact_name)
+            if not contact:
+                self.logger.warning(f"Contact not found: {contact_name}")
+                return
+
+            pubkey = contact.get("public_key")
+            if not pubkey:
+                self.logger.warning(f"Contact {contact_name} has no public_key")
+                return
+
+            self.logger.debug(f"Contact selected: {contact_name}, pubkey: {pubkey[:16]}..., type: {contact.get('type')}")
+
+            # Set both name (for compatibility) and public_key (canonical identifier)
             self.current_contact = contact_name
+            self.current_contact_pubkey = pubkey
             self.current_channel = None  # Clear channel selection
+
+            # Show Contact Info tab for contacts (has relevant metadata)
+            self.tabbed_content.show_tab("contact-info-tab")
+
+            # Update Contact Info tab with contact public_key
+            self.logger.debug(f"Calling load_contact_info with pubkey: {pubkey[:16]}...")
+            self.load_contact_info(pubkey)
 
             # Mark messages as read and update display
             self.connection.mark_as_read(contact_name)
             self._update_single_contact_display(contact_name)
 
             # Check if this is a room server (type 3) and prompt for password if needed
-            contact = self.connection.get_contact_by_name(contact_name)
             if contact and contact.get("type") == 3:
                 # This is a room server - check if we're logged in
                 if not self.connection.is_logged_into_room(contact_name):
@@ -1487,6 +1656,10 @@ class MeshTUI(App):
             # Load message history for this contact
             await self.load_contact_messages(contact_name)
 
+            # Load contact info for Contact Info tab (using public_key if available)
+            if pubkey:
+                self.load_contact_info(pubkey)
+
             # Focus the message input
             self.message_input.focus()
 
@@ -1502,7 +1675,11 @@ class MeshTUI(App):
 
             self.current_channel = channel_name
             self.current_contact = None  # Clear contact selection
+            self.current_contact_pubkey = None  # Clear contact pubkey
             self.logger.info(f"Selected channel: {channel_name}")
+
+            # Hide Contact Info tab since channels don't have contact metadata
+            self.tabbed_content.hide_tab("contact-info-tab")
 
             # Mark channel messages as read and update display
             self.connection.mark_as_read(channel_name)
@@ -1604,7 +1781,7 @@ class MeshTUI(App):
                         else None
                     )
                     if my_contact:
-                        my_pubkey = my_contact.get("pubkey")
+                        my_pubkey = my_contact.get("public_key")
                         if my_pubkey:
                             # Check if any of the sender fields match our pubkey (prefix or full)
                             if sender_pubkey and (
@@ -1712,6 +1889,104 @@ class MeshTUI(App):
                 self.chat_area.write("[dim]No message history[/dim]")
         except Exception as e:
             self.logger.error(f"Error loading channel messages: {e}")
+
+    def load_contact_info(self, pubkey: str) -> None:
+        """Load contact information into the Contact Info tab.
+
+        Args:
+            pubkey: Public key of the contact to load
+        """
+        try:
+            self.logger.debug(f"Loading contact info for pubkey: {pubkey[:16]}...")
+
+            # Look up contact by public_key (not name, as names can change)
+            contact = self.connection.db.get_contact_by_pubkey(pubkey)
+            if not contact:
+                self.logger.warning(f"Contact not found in database for pubkey: {pubkey[:16]}...")
+                self.contact_info_status.update("Contact not found")
+                return
+
+            self.logger.debug(f"Found contact: {contact.get('name')} (type: {contact.get('type')})")
+
+            # Update contact details
+            contact_name = contact.get("name", "Unknown")
+            self.contact_name_display.update(contact_name)
+
+            # Display public_key (canonical field name from meshcore API)
+            display_pubkey = pubkey[:16] + "..." if len(pubkey) > 16 else pubkey
+            self.contact_pubkey_display.update(display_pubkey)
+
+            # Contact type mapping using match/case (Python 3.10+)
+            contact_type = contact.get("type", 0)
+            match contact_type:
+                case 0 | 1:
+                    type_name = "Companion"
+                case 2:
+                    type_name = "Repeater"
+                case 3:
+                    type_name = "Room Server"
+                case 4:
+                    type_name = "Sensor"
+                case _:
+                    type_name = f"Unknown ({contact_type})"
+            self.contact_type_display.update(type_name)
+
+            # Display last seen timestamp
+            last_seen = contact.get("last_seen", 0)
+            if last_seen > 0:
+                from datetime import datetime
+                last_seen_dt = datetime.fromtimestamp(last_seen)
+                # Calculate time difference using match/case (Python 3.10+)
+                now = datetime.now()
+                diff = now - last_seen_dt
+
+                match (diff.days, diff.seconds):
+                    case (days, _) if days > 0:
+                        last_seen_str = f"{days} day{'s' if days > 1 else ''} ago"
+                    case (_, seconds) if seconds >= 3600:
+                        hours = seconds // 3600
+                        last_seen_str = f"{hours} hour{'s' if hours > 1 else ''} ago"
+                    case (_, seconds) if seconds >= 60:
+                        minutes = seconds // 60
+                        last_seen_str = f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+                    case _:
+                        last_seen_str = "Just now"
+
+                self.contact_lastseen_display.update(f"{last_seen_str} ({last_seen_dt.strftime('%Y-%m-%d %H:%M:%S')})")
+            else:
+                self.contact_lastseen_display.update("Never")
+
+            # Load notes from database using public_key
+            notes = self.connection.db.get_contact_notes(pubkey)
+            self.contact_notes_input.load_text(notes)
+
+            self.contact_info_status.update(f"Viewing contact: {contact_name}")
+        except Exception as e:
+            self.logger.error(f"Error loading contact info: {e}")
+            self.contact_info_status.update(f"Error loading contact info: {e}")
+
+    @on(Button.Pressed, "#save-notes-btn")
+    async def save_contact_notes(self) -> None:
+        """Save notes for the current contact using public_key lookup."""
+        if not self.current_contact_pubkey:
+            self.contact_info_status.update("No contact selected")
+            return
+
+        try:
+            # Use stored public_key for reliable lookup (names can change)
+            notes = self.contact_notes_input.text
+            success = self.connection.db.set_contact_notes(self.current_contact_pubkey, notes)
+
+            if success:
+                # Get current name for display (may have changed since selection)
+                contact = self.connection.db.get_contact_by_pubkey(self.current_contact_pubkey)
+                contact_name = contact.get("name", "Unknown") if contact else self.current_contact
+                self.contact_info_status.update(f"Notes saved for {contact_name}")
+            else:
+                self.contact_info_status.update("Failed to save notes")
+        except Exception as e:
+            self.logger.error(f"Error saving contact notes: {e}")
+            self.contact_info_status.update(f"Error: {e}")
 
     async def update_contacts(self) -> None:
         """Update the contacts list in the UI."""
@@ -1918,7 +2193,7 @@ class MeshTUI(App):
                     self.connection.db.get_contact_by_me() if self.connection else None
                 )
                 if my_contact:
-                    my_pubkey = my_contact.get("pubkey")
+                    my_pubkey = my_contact.get("public_key")
                     if my_pubkey:
                         # Check if any of the sender fields match our pubkey (prefix or full)
                         if sender_pubkey and (
