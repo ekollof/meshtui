@@ -291,13 +291,21 @@ class MeshConnection:
             for attempt in range(1, max_retries + 1):
                 try:
                     self.logger.debug(f"BLE connection attempt {attempt}/{max_retries}")
-                    self.meshcore = await MeshCore.create_ble(
-                        address=address,
-                        device=device,
-                        pin=pin,
-                        debug=False,
-                        only_error=False,
-                    )
+                    # Pass either address OR device, not both (device takes precedence)
+                    if device:
+                        self.meshcore = await MeshCore.create_ble(
+                            device=device,
+                            pin=pin,
+                            debug=True,  # Enable debug to see what's failing
+                            only_error=False,
+                        )
+                    else:
+                        self.meshcore = await MeshCore.create_ble(
+                            address=address,
+                            pin=pin,
+                            debug=True,  # Enable debug to see what's failing
+                            only_error=False,
+                        )
                     # If we get here, connection succeeded
                     break
                 except Exception as e:
