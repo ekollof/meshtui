@@ -944,9 +944,9 @@ class MeshTUI(App):
             # If serial fails, try BLE connection as fallback
             self.logger.info("Serial auto-connect failed, trying BLE...")
             try:
-                # Use shorter timeout for BLE auto-connect to avoid blocking UI
+                # BLE pairing can take longer, increase timeout
                 success = await asyncio.wait_for(
-                    self.connection.connect_ble(timeout=2.0), timeout=10.0
+                    self.connection.connect_ble(timeout=2.0), timeout=30.0
                 )
             except asyncio.TimeoutError:
                 self.logger.error("Timeout auto-connecting via BLE")
