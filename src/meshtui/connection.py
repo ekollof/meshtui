@@ -114,8 +114,18 @@ class MeshConnection:
             devices = await BleakScanner.discover(timeout=timeout, return_adv=True)
             meshcore_devices = []
 
-            for device, advertisement_data in devices.items():
+            # devices.items() returns (address_str, (device_obj, adv_data)) tuples
+            # Sometimes the iteration can yield unexpected types
+            for key, value in devices.items():
                 try:
+                    # When return_adv=True, value is a tuple of (device, advertisement_data)
+                    if isinstance(value, tuple) and len(value) >= 2:
+                        device, advertisement_data = value[0], value[1]
+                    else:
+                        # Fallback for unexpected format
+                        device = value
+                        advertisement_data = None
+                    
                     # Skip if device is a string or doesn't have expected attributes
                     if isinstance(device, str):
                         continue
@@ -125,14 +135,14 @@ class MeshConnection:
                         meshcore_devices.append(
                             {
                                 "name": device_name,
-                                "address": device.address,
+                                "address": getattr(device, 'address', key),  # Fallback to key if no address
                                 "rssi": (
-                                    advertisement_data.rssi if advertisement_data else None
+                                    advertisement_data.rssi if advertisement_data and hasattr(advertisement_data, 'rssi') else None
                                 ),
                                 "device": device,
                             }
                         )
-                except (AttributeError, TypeError) as e:
+                except (AttributeError, TypeError, ValueError) as e:
                     self.logger.debug(f"Skipping invalid BLE device entry: {e}")
                     continue
 
@@ -141,6 +151,8 @@ class MeshConnection:
 
         except Exception as e:
             self.logger.error(f"BLE scan failed: {e}")
+            import traceback
+            self.logger.debug(f"BLE scan traceback: {traceback.format_exc()}")
             return []
 
     async def scan_serial_devices(
@@ -273,20 +285,30 @@ class MeshConnection:
             self.logger.info(
                 f"Connecting to BLE device: {address}" + (" with PIN" if pin else "")
             )
-            try:
-                self.meshcore = await MeshCore.create_ble(
-                    address=address,
-                    device=device,
-                    pin=pin,
-                    debug=False,
-                    only_error=False,
-                )
-            except Exception as e:
-                self.logger.error(f"BLE connection failed during initialization: {e}")
-                import traceback
-
-                self.logger.debug(f"BLE connection traceback: {traceback.format_exc()}")
-                return False
+            
+            # Retry connection up to 3 times
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    self.logger.debug(f"BLE connection attempt {attempt}/{max_retries}")
+                    self.meshcore = await MeshCore.create_ble(
+                        address=address,
+                        device=device,
+                        pin=pin,
+                        debug=False,
+                        only_error=False,
+                    )
+                    # If we get here, connection succeeded
+                    break
+                except Exception as e:
+                    if attempt < max_retries:
+                        self.logger.warning(f"BLE connection attempt {attempt} failed: {e}, retrying...")
+                        await asyncio.sleep(1)  # Wait before retry
+                    else:
+                        self.logger.error(f"BLE connection failed after {max_retries} attempts: {e}")
+                        import traceback
+                        self.logger.debug(f"BLE connection traceback: {traceback.format_exc()}")
+                        return False
 
             # Test connection
             result = await self.meshcore.commands.send_device_query()

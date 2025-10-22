@@ -1187,6 +1187,10 @@ class MeshTUI(App):
                         "Scan for new devices or enter address of paired device",
                         classes="help-text",
                     )
+                    yield Static(
+                        "[yellow]KDE/GNOME: If connection fails, unpair device in system Bluetooth settings first[/yellow]",
+                        classes="help-text",
+                    )
 
                     yield Label("Known Device Address (if already paired):")
                     yield Input(
@@ -1226,8 +1230,8 @@ class MeshTUI(App):
                         f"Last connected: {saved_address}. Click Connect or Rescan."
                     )
                 else:
-                    # Schedule scan in background so dialog shows immediately
-                    self.call_later(self.scan_devices)
+                    # Run scan in background task so dialog shows immediately
+                    asyncio.create_task(self.scan_devices())
 
             async def scan_devices(self):
                 """Scan for BLE devices and populate list."""
@@ -1314,9 +1318,9 @@ class MeshTUI(App):
                         status.update("✗ Connection failed. Check PIN and try again.")
 
             @on(Button.Pressed, "#rescan-btn")
-            async def rescan(self):
-                """Rescan for BLE devices."""
-                await self.scan_devices()
+            def rescan(self):
+                """Rescan for BLE devices in background."""
+                asyncio.create_task(self.scan_devices())
 
             @on(Button.Pressed, "#connect-addr-btn")
             async def connect_by_address(self):
