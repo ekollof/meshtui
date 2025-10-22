@@ -206,14 +206,24 @@ class BLETransport:
 
             meshcore_devices = []
             for device in devices:
-                if device.name and "meshcore" in device.name.lower():
-                    meshcore_devices.append(
-                        {
-                            "name": device.name,
-                            "address": device.address,
-                            "rssi": getattr(device, "rssi", "Unknown"),
-                        }
-                    )
+                try:
+                    # Handle both BLEDevice objects and strings
+                    if isinstance(device, str):
+                        continue  # Skip string entries
+                    
+                    device_name = getattr(device, 'name', None)
+                    if device_name and "meshcore" in device_name.lower():
+                        meshcore_devices.append(
+                            {
+                                "name": device_name,
+                                "address": device.address,
+                                "rssi": getattr(device, "rssi", "Unknown"),
+                            }
+                        )
+                except (AttributeError, TypeError) as e:
+                    # Skip devices that don't have expected attributes
+                    self.logger.debug(f"Skipping invalid device entry: {e}")
+                    continue
 
             self.logger.info(f"Found {len(meshcore_devices)} MeshCore BLE devices")
             return meshcore_devices

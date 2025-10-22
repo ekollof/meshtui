@@ -494,8 +494,8 @@ class MeshTUI(App):
         # Register contacts callback for UI updates
         self.connection.set_contacts_callback(self._on_contacts_updated)
 
-        # Try to auto-connect if possible (schedule after mount)
-        self.call_later(lambda: asyncio.create_task(self.auto_connect()))
+        # Try to auto-connect in background (non-blocking)
+        asyncio.create_task(self.auto_connect())
 
         # Start periodic message refresh (every 2 seconds)
         self.set_interval(2.0, self.periodic_message_refresh)
@@ -944,8 +944,9 @@ class MeshTUI(App):
             # If serial fails, try BLE connection as fallback
             self.logger.info("Serial auto-connect failed, trying BLE...")
             try:
+                # Use shorter timeout for BLE auto-connect to avoid blocking UI
                 success = await asyncio.wait_for(
-                    self.connection.connect_ble(), timeout=15.0
+                    self.connection.connect_ble(timeout=2.0), timeout=10.0
                 )
             except asyncio.TimeoutError:
                 self.logger.error("Timeout auto-connecting via BLE")

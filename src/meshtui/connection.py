@@ -115,17 +115,26 @@ class MeshConnection:
             meshcore_devices = []
 
             for device, advertisement_data in devices.items():
-                if device.name and device.name.startswith("MeshCore-"):
-                    meshcore_devices.append(
-                        {
-                            "name": device.name,
-                            "address": device.address,
-                            "rssi": (
-                                advertisement_data.rssi if advertisement_data else None
-                            ),
-                            "device": device,
-                        }
-                    )
+                try:
+                    # Skip if device is a string or doesn't have expected attributes
+                    if isinstance(device, str):
+                        continue
+                    
+                    device_name = getattr(device, 'name', None)
+                    if device_name and device_name.startswith("MeshCore-"):
+                        meshcore_devices.append(
+                            {
+                                "name": device_name,
+                                "address": device.address,
+                                "rssi": (
+                                    advertisement_data.rssi if advertisement_data else None
+                                ),
+                                "device": device,
+                            }
+                        )
+                except (AttributeError, TypeError) as e:
+                    self.logger.debug(f"Skipping invalid BLE device entry: {e}")
+                    continue
 
             self.logger.info(f"Found {len(meshcore_devices)} BLE MeshCore devices")
             return meshcore_devices
