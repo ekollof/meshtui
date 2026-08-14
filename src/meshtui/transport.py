@@ -85,8 +85,9 @@ class SerialTransport:
                         f"✓ Found MeshCore device at {device_path}: {device_info.get('model')} v{device_info.get('ver', 'unknown')}"
                     )
                     await temp_mc.disconnect()
-                    # Give asyncio time to clean up tasks
-                    await asyncio.sleep(0.1)
+                    # Let the serial port and pending meshcore tasks settle
+                    # before a later connect() re-opens the same device.
+                    await asyncio.sleep(0.5)
                     return True
                 else:
                     self.logger.debug(

@@ -1,5 +1,18 @@
 # MeshTUI Changelog
 
+## Unreleased
+
+### Installation
+- **Desktop notifications are optional.** `notify2` and `dbus-python` are no longer required dependencies. Install `meshtui[notifications]` on Linux if you want D-Bus desktop alerts. This unblocks installs on macOS, Windows, and minimal Debian containers (#3, #5, #6).
+- Documented Debian/Ubuntu build packages (`pkg-config`, `libdbus-1-dev`, `libglib2.0-dev`) for the notifications extra.
+
+### Channels
+- Configured channels are queried from the radio after connect and shown in the sidebar (#10).
+- Create-channel dialog accepts an optional 16-byte secret (hex) so you can add an existing channel you already have a key for (#13).
+
+### Serial auto-connect
+- After a successful scan, MeshTUI no longer re-identifies the same serial device before connecting. That second probe often failed while the port was still settling (#4).
+
 ## Version 0.1.2 (2025-10-21)
 
 ### Contact Info Tab Auto-Hide for Channels

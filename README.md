@@ -66,6 +66,8 @@ uv tool install meshtui
 
 This will install the `meshtui` command globally and isolate its dependencies.
 
+Desktop notifications are optional and Linux-only (`pipx install 'meshtui[notifications]'`). They are not required to run the TUI. See [Linux system packages](#linux-system-packages-optional) if that extra fails to build.
+
 #### Optional: TCP Proxy Component
 
 **⚠️ EXPERIMENTAL**: The TCP proxy is a new feature in active development.
@@ -109,6 +111,39 @@ uv pip install -e .
 # or with pip in a virtual environment:
 # python -m venv .venv && source .venv/bin/activate && pip install -e .
 ```
+
+### Linux system packages (optional)
+
+Desktop notifications use D-Bus (`notify2` / `dbus-python`). They are **not** required to run MeshTUI.
+
+**Core install** (recommended, works on Linux, macOS, and Windows):
+
+```bash
+pipx install meshtui
+# or
+uv tool install meshtui
+```
+
+**Desktop notifications** (Linux with D-Bus only):
+
+```bash
+# Debian / Ubuntu (including Debian 13 Trixie LXC)
+sudo apt install pkg-config libdbus-1-dev libglib2.0-dev
+
+# Fedora
+sudo dnf install pkgconf-pkg-config dbus-devel glib2-devel
+
+# then
+pipx install 'meshtui[notifications]'
+# or
+uv tool install 'meshtui[notifications]'
+```
+
+On a minimal Debian/Ubuntu container, the `pkg-config` / `libdbus-1-dev` / `libglib2.0-dev` packages are only needed if you install the `notifications` extra.
+
+**macOS:** D-Bus notifications are not used. Install with `uv tool install meshtui` or `pipx install meshtui`. Do not install the `notifications` extra unless you have `dbus` available (for example via `brew install dbus`).
+
+**Windows:** `dbus-python` does not build on native Windows. Install with `pipx install meshtui` or `uv tool install meshtui`. WSL works the same as Linux.
 
 ### Requirements
 
@@ -209,11 +244,21 @@ MeshTUI allows you to create encrypted channels for group communication:
 4. Click **"Create"** to create the channel
 5. The new channel appears in your channels list
 
+#### **Joining an existing channel (you already have the key):**
+
+1. Click the **"+"** button next to the "Channels" header
+2. Pick a free **channel slot** (1-7)
+3. Enter the **channel name exactly as the other devices use it** (do **not** add a `#` prefix if you are supplying the key)
+4. Paste the **16-byte secret** as 32 hex characters (colons, spaces, dashes, or a `0x` prefix are accepted)
+5. Click **"Create"** — this writes the name and secret into that slot on the radio
+
+The `#` prefix always derives the secret from the name and **ignores** any key you type. Use `#name` only when every device joins that way.
+
 #### **Channel Security:**
 
 - Channels with **# prefix** automatically generate a 16-byte secret from the hash of the channel name
 - Other devices can join by using the same channel name with # prefix
-- Custom channels require manual secret exchange (16 bytes)
+- Custom channels require the same 16-byte secret on every device
 - All channel messages are encrypted using the channel secret
 
 #### **Example:**

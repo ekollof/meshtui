@@ -344,6 +344,8 @@ class MeshConnection:
             # Explicitly refresh contacts after connection
             self.logger.debug("Refreshing contacts after BLE connection...")
             await self.refresh_contacts()
+            if self.channels:
+                await self.channels.refresh()
 
             # Auto-sync time if device has no GPS
             await self.auto_sync_time_if_needed()
@@ -388,6 +390,8 @@ class MeshConnection:
             # Explicitly refresh contacts after connection
             self.logger.debug("Refreshing contacts after TCP connection...")
             await self.refresh_contacts()
+            if self.channels:
+                await self.channels.refresh()
 
             # Auto-sync time if device has no GPS
             await self.auto_sync_time_if_needed()
@@ -463,6 +467,8 @@ class MeshConnection:
             # Explicitly refresh contacts after connection
             self.logger.debug("Refreshing contacts after connection...")
             await self.refresh_contacts()
+            if self.channels:
+                await self.channels.refresh()
 
             # Auto-sync time if device has no GPS
             await self.auto_sync_time_if_needed()
@@ -2240,8 +2246,9 @@ class MeshConnection:
                 return False
 
             self.logger.info(f"Channel {channel_idx} created successfully")
-            # Refresh channels list
+            # Refresh channels list (clear cache first so we re-query)
             if self.channels:
+                self.channels._channels = []
                 await self.channels.refresh()
             return True
 

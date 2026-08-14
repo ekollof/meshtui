@@ -5,8 +5,52 @@ Channel management for MeshTUI.
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Optional, Union
 from meshcore import EventType
+
+
+def parse_channel_secret(key: str) -> Optional[bytes]:
+    """Parse a user-supplied channel secret into exactly 16 bytes.
+
+    Accepts a 32-character hex string (optional ``0x`` prefix, colons,
+    spaces, or dashes) or a 16-character / 16-byte UTF-8 string.
+
+    Args:
+        key: Secret as entered by the user
+
+    Returns:
+        16-byte secret, or None if key is empty
+
+    Raises:
+        ValueError: If the key is present but not a valid 16-byte secret
+    """
+    if key is None:
+        return None
+
+    cleaned = key.strip()
+    if not cleaned:
+        return None
+
+    hex_candidate = cleaned
+    if hex_candidate.lower().startswith("0x"):
+        hex_candidate = hex_candidate[2:]
+    hex_candidate = (
+        hex_candidate.replace(":", "").replace(" ", "").replace("-", "")
+    )
+    try:
+        secret = bytes.fromhex(hex_candidate)
+        if len(secret) == 16:
+            return secret
+    except ValueError:
+        pass
+
+    raw = cleaned.encode("utf-8")
+    if len(raw) == 16:
+        return raw
+
+    raise ValueError(
+        "Channel secret must be 16 bytes (32 hex characters or a 16-character string)"
+    )
 
 
 class ChannelManager:
@@ -20,6 +64,7 @@ class ChannelManager:
         """
         self.meshcore = meshcore
         self.logger = logging.getLogger("meshtui.channel")
+        self._channels: List[Dict[str, Any]] = []
 
     async def send_message(self, channel: Union[str, int], message: str) -> bool:
         """Send a message to a channel.
@@ -78,6 +123,17 @@ class ChannelManager:
             self.logger.error(f"Error sending channel message: {e}")
             return False
 
+    def _normalize_channel(self, channel_id: int, channel_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize a channel payload into the dict the UI expects."""
+        channel_idx = channel_info.get("channel_idx", channel_id)
+        name = channel_info.get("channel_name") or channel_info.get("name") or ""
+        return {
+            "id": channel_idx,
+            "channel_idx": channel_idx,
+            "name": name,
+            **channel_info,
+        }
+
     async def refresh(self) -> None:
         """Refresh the channels list by querying all channel slots."""
         if not self.meshcore:
@@ -85,14 +141,25 @@ class ChannelManager:
 
         try:
             self.logger.debug("Refreshing channels list")
+            channels: List[Dict[str, Any]] = []
             # Query channels 0-7 (typical range for most devices)
             for idx in range(8):
                 try:
-                    result = await self.meshcore.commands.get_channel(idx)
+                    result = await asyncio.wait_for(
+                        self.meshcore.commands.get_channel(idx), timeout=3.0
+                    )
                     if result.type != EventType.ERROR:
-                        self.logger.debug(f"Channel {idx} info: {result.payload}")
+                        channel_info = result.payload or {}
+                        self.logger.debug(f"Channel {idx} info: {channel_info}")
+                        normalized = self._normalize_channel(idx, channel_info)
+                        if normalized.get("name"):
+                            channels.append(normalized)
+                except asyncio.TimeoutError:
+                    self.logger.debug(f"Timeout querying channel slot {idx}")
                 except Exception as e:
                     self.logger.debug(f"Channel {idx} not available: {e}")
+            self._channels = channels
+            self.logger.info(f"Refreshed {len(channels)} named channel slots")
         except Exception as e:
             self.logger.error(f"Error refreshing channels: {e}")
 
@@ -106,49 +173,32 @@ class ChannelManager:
             return []
 
         try:
-            # Use stored channel info from events if available
-            if (
-                hasattr(self.meshcore, "channel_info_list")
-                and self.meshcore.channel_info_list
-            ):
+            # Prefer a previously queried cache so the UI does not
+            # re-probe every slot on every refresh.
+            if self._channels:
+                self.logger.debug(
+                    f"Returning {len(self._channels)} cached channels"
+                )
+                return list(self._channels)
+
+            # MeshCore itself does not populate channel_info_list;
+            # MeshConnection stores events on its own instance. Still
+            # honor the attribute if a caller or test set it.
+            if getattr(self.meshcore, "channel_info_list", None):
                 channels = []
                 for ch_info in self.meshcore.channel_info_list:
-                    ch_name = ch_info.get("channel_name", "")
-                    if ch_name:  # Only include channels with names
-                        channels.append(
-                            {
-                                "id": ch_info.get("channel_idx", 0),
-                                "name": ch_name,
-                                **ch_info,
-                            }
-                        )
-                self.logger.info(f"Found {len(channels)} channels")
-                return channels
+                    channel_idx = ch_info.get("channel_idx", 0)
+                    normalized = self._normalize_channel(channel_idx, ch_info)
+                    if normalized.get("name"):
+                        channels.append(normalized)
+                if channels:
+                    self._channels = channels
+                    self.logger.info(f"Found {len(channels)} channels")
+                    return list(channels)
 
-            # Fallback: try to get channel information via commands
-            channels = []
-            for channel_id in range(8):  # MeshCore supports up to 8 channels
-                try:
-                    channel_result = await asyncio.wait_for(
-                        self.meshcore.commands.get_channel(channel_id), timeout=2.0
-                    )
-                    if channel_result.type != EventType.ERROR:
-                        channel_info = channel_result.payload
-                        if channel_info and channel_info.get("channel_name"):
-                            channels.append(
-                                {
-                                    "id": channel_id,
-                                    "name": channel_info.get("channel_name", "Unknown"),
-                                    **channel_info,
-                                }
-                            )
-                except asyncio.TimeoutError:
-                    continue
-                except Exception:
-                    continue
-
-            self.logger.info(f"Found {len(channels)} channels")
-            return channels
+            await self.refresh()
+            self.logger.info(f"Found {len(self._channels)} channels")
+            return list(self._channels)
 
         except Exception as e:
             self.logger.error(f"Error getting channels: {e}")
@@ -183,15 +233,16 @@ class ChannelManager:
                 return False
 
             # Set the channel
-            secret = key.encode("utf-8") if key else b"\x00" * 16
+            secret = parse_channel_secret(key) if key else b"\x00" * 16
             result = await self.meshcore.commands.set_channel(
-                available_slot, channel_name, secret[:16].ljust(16, b"\x00")
+                available_slot, channel_name, secret
             )
 
             if result.type == EventType.ERROR:
                 self.logger.error(f"Failed to join channel: {result}")
                 return False
 
+            self._channels = []
             self.logger.info(
                 f"Successfully joined channel '{channel_name}' in slot {available_slot}"
             )

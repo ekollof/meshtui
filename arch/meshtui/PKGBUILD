@@ -12,8 +12,10 @@ depends=(
     'python-textual>=0.50.0'
     'python-requests>=2.28.0'
     'python-aiohttp>=3.9.0'
-    'python-notify2>=0.3.1'
-    'python-dbus>=1.2.18'
+)
+optdepends=(
+    'python-notify2: desktop notifications'
+    'python-dbus: desktop notifications (required by python-notify2)'
 )
 makedepends=(
     'python-build'

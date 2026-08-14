@@ -35,6 +35,7 @@ from textual.widgets import (
 )
 from textual.binding import Binding
 
+from .channel import parse_channel_secret
 from .connection import MeshConnection
 
 
@@ -841,7 +842,7 @@ class MeshTUI(App):
                     self.logger.debug("About to update contacts in UI...")
                     await asyncio.wait_for(self.update_contacts(), timeout=5.0)
                     self.logger.debug("About to update channels in UI...")
-                    await asyncio.wait_for(self.update_channels(), timeout=5.0)
+                    await asyncio.wait_for(self.update_channels(), timeout=20.0)
                     self.logger.debug("About to refresh messages...")
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 else:
@@ -867,7 +868,7 @@ class MeshTUI(App):
                 if success:
                     self.logger.info("Connected via TCP successfully")
                     await asyncio.wait_for(self.update_contacts(), timeout=5.0)
-                    await asyncio.wait_for(self.update_channels(), timeout=5.0)
+                    await asyncio.wait_for(self.update_channels(), timeout=20.0)
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 else:
                     self.logger.error(
@@ -888,7 +889,7 @@ class MeshTUI(App):
                 if success:
                     self.logger.info("Connected via BLE successfully")
                     await asyncio.wait_for(self.update_contacts(), timeout=5.0)
-                    await asyncio.wait_for(self.update_channels(), timeout=5.0)
+                    await asyncio.wait_for(self.update_channels(), timeout=20.0)
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 else:
                     self.logger.error(
@@ -923,8 +924,14 @@ class MeshTUI(App):
                 self.logger.info(f"Attempting to connect to: {device_to_try}")
 
                 try:
+                    # Scan already identified this as MeshCore; skip a second
+                    # identify pass that can fail while the serial port is
+                    # still settling from the scan connection.
                     success = await asyncio.wait_for(
-                        self.connection.connect_serial(port=device_to_try), timeout=10.0
+                        self.connection.connect_serial(
+                            port=device_to_try, verify_meshcore=False
+                        ),
+                        timeout=10.0,
                     )
                 except asyncio.TimeoutError:
                     self.logger.error(
@@ -936,7 +943,7 @@ class MeshTUI(App):
                     self.logger.debug("About to update contacts in UI...")
                     await asyncio.wait_for(self.update_contacts(), timeout=5.0)
                     self.logger.debug("About to update channels in UI...")
-                    await asyncio.wait_for(self.update_channels(), timeout=5.0)
+                    await asyncio.wait_for(self.update_channels(), timeout=20.0)
                     self.logger.debug("About to refresh messages...")
                     await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                     return
@@ -954,7 +961,7 @@ class MeshTUI(App):
             if success:
                 self.logger.info("Auto-connected via BLE successfully")
                 await asyncio.wait_for(self.update_contacts(), timeout=5.0)
-                await asyncio.wait_for(self.update_channels(), timeout=5.0)
+                await asyncio.wait_for(self.update_channels(), timeout=20.0)
                 await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
                 return
 
@@ -1023,11 +1030,20 @@ class MeshTUI(App):
                         "Use # prefix (e.g., #mychannel) for auto-generated secret",
                         classes="help-text",
                     )
+                    yield Static(
+                        "To join an existing channel, enter its name and 16-byte secret (hex)",
+                        classes="help-text",
+                    )
                     yield Label("Channel Slot (1-7):")
                     yield Input(placeholder="1", id="channel-slot-input")
                     yield Label("Channel Name:")
                     yield Input(
                         placeholder="#mychannel or Custom Name", id="channel-name-input"
+                    )
+                    yield Label("Channel Secret (optional):")
+                    yield Input(
+                        placeholder="32 hex chars, or leave empty",
+                        id="channel-secret-input",
                     )
                     with Horizontal(id="dialog-buttons"):
                         yield Button("Create", id="create-btn", variant="success")
@@ -1038,10 +1054,12 @@ class MeshTUI(App):
                 """Create the channel."""
                 slot_input = self.query_one("#channel-slot-input", Input)
                 name_input = self.query_one("#channel-name-input", Input)
+                secret_input = self.query_one("#channel-secret-input", Input)
 
                 try:
                     slot_str = slot_input.value.strip()
                     name = name_input.value.strip()
+                    secret_str = secret_input.value.strip()
 
                     # Validate inputs
                     if not slot_str:
@@ -1071,14 +1089,40 @@ class MeshTUI(App):
                         self.dismiss()
                         return
 
-                    success = await self.app.connection.create_channel(slot, name)
+                    channel_secret = None
+                    if secret_str:
+                        try:
+                            channel_secret = parse_channel_secret(secret_str)
+                        except ValueError as e:
+                            self.app.logger.error(str(e))
+                            self.app.notify(str(e), severity="error")
+                            return
+                        if name.startswith("#"):
+                            self.app.logger.warning(
+                                "Name starts with #; MeshCore will derive the secret from the name and ignore the entered key"
+                            )
+                            self.app.notify(
+                                "# prefix generates the secret; entered key is ignored",
+                                severity="warning",
+                            )
+
+                    success = await self.app.connection.create_channel(
+                        slot, name, channel_secret
+                    )
                     if success:
                         self.app.logger.info(f"✓ Created channel {slot}: {name}")
+                        self.app.notify(
+                            f"Added channel {name} in slot {slot}",
+                            severity="information",
+                        )
                         # Refresh channels list
                         await self.app.update_channels()
                     else:
                         self.app.logger.error(
                             f"✗ Failed to create channel {slot}: {name}"
+                        )
+                        self.app.notify(
+                            f"Failed to create channel {name}", severity="error"
                         )
 
                 except Exception as e:
@@ -2215,7 +2259,9 @@ class MeshTUI(App):
             # Add other channels (channels is a list, not dict)
             for channel_info in channels:
                 channel_name = channel_info.get("name", "Unknown")
-                channel_idx = channel_info.get("channel_idx", 0)
+                channel_idx = channel_info.get(
+                    "channel_idx", channel_info.get("id", 0)
+                )
                 if channel_name and channel_name != "Public":
                     # Store channel with index for proper message filtering
                     channel_key = f"Channel {channel_idx}"
@@ -2953,13 +2999,15 @@ class MeshTUI(App):
   • Room messages: Login to room server first
   • Create channel: Click "+" button next to Channels
 
-[bold yellow]Creating Channels:[/bold yellow]
+[bold yellow]Creating / Joining Channels:[/bold yellow]
   1. Click "+" button next to "Channels" header
   2. Enter channel slot (1-7, 0 is Public)
   3. Enter channel name (use # prefix for auto-hash)
      Example: "#mychannel" generates secret from hash
-  4. Click "Create" to create the channel
-  5. New channel appears in channels list
+  4. To join an existing channel, enter its name (no #)
+     and paste the 16-byte secret as 32 hex characters
+  5. Click "Create" to write the slot
+  6. Channel appears in the channels list
 
 [bold yellow]Message Delivery:[/bold yellow]
   • ✓ Sent - Message transmitted successfully

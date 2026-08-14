@@ -7,7 +7,7 @@ Tests cover contact management, channel operations, and room server handling.
 import pytest
 from unittest.mock import Mock, AsyncMock
 from meshtui.contact import ContactManager
-from meshtui.channel import ChannelManager
+from meshtui.channel import ChannelManager, parse_channel_secret
 from meshtui.room import RoomManager
 
 
@@ -192,7 +192,7 @@ class TestChannelManager:
         result = await manager.send_message(0, "Hello channel!")
 
         mock_meshcore.commands.send_chan_msg.assert_called_once_with(0, "Hello channel!")
-        assert result is True
+        assert result["status"] == "sent"
 
     @pytest.mark.asyncio
     async def test_send_channel_message_by_name(self, mock_meshcore):
@@ -211,7 +211,7 @@ class TestChannelManager:
         result = await manager.send_message("Public", "Hello!")
 
         mock_meshcore.commands.send_chan_msg.assert_called_once_with(0, "Hello!")
-        assert result is True
+        assert result["status"] == "sent"
 
     @pytest.mark.asyncio
     async def test_join_channel(self, mock_meshcore):
@@ -227,11 +227,72 @@ class TestChannelManager:
         mock_result.type = Mock()  # Not ERROR type
         mock_meshcore.commands.set_channel.return_value = mock_result
 
-        result = await manager.join_channel("Test Channel", "secretkey")
+        result = await manager.join_channel(
+            "Test Channel", "00112233445566778899aabbccddeeff"
+        )
 
         # Should use slot 1 (since 0 is taken)
         mock_meshcore.commands.set_channel.assert_called_once()
+        args = mock_meshcore.commands.set_channel.call_args[0]
+        assert args[0] == 1
+        assert args[1] == "Test Channel"
+        assert args[2] == bytes.fromhex("00112233445566778899aabbccddeeff")
         assert result is True
+
+    def test_parse_channel_secret_hex(self):
+        """Hex secrets (with separators) parse to 16 bytes."""
+        expected = bytes.fromhex("00112233445566778899aabbccddeeff")
+        assert parse_channel_secret("00112233445566778899aabbccddeeff") == expected
+        assert parse_channel_secret("0x00112233445566778899aabbccddeeff") == expected
+        assert (
+            parse_channel_secret("00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff")
+            == expected
+        )
+
+    def test_parse_channel_secret_raw(self):
+        """A 16-character string is accepted as raw bytes."""
+        assert parse_channel_secret("0123456789abcdef") == b"0123456789abcdef"
+
+    def test_parse_channel_secret_empty(self):
+        """Empty input means 'no secret supplied'."""
+        assert parse_channel_secret("") is None
+        assert parse_channel_secret("   ") is None
+
+    def test_parse_channel_secret_invalid(self):
+        """Short or malformed secrets are rejected."""
+        with pytest.raises(ValueError):
+            parse_channel_secret("short")
+
+    @pytest.mark.asyncio
+    async def test_get_channels_queries_device_when_unlistened(self, mock_meshcore):
+        """Query each slot when MeshCore has no populated channel list."""
+        manager = ChannelManager(mock_meshcore)
+        mock_meshcore.channel_info_list = []
+
+        def _channel_result(idx, name):
+            result = Mock()
+            result.type = Mock()
+            result.payload = {"channel_idx": idx, "channel_name": name}
+            return result
+
+        mock_meshcore.commands.get_channel = AsyncMock(
+            side_effect=[
+                _channel_result(0, "Public"),
+                _channel_result(1, "Ops"),
+                _channel_result(2, ""),
+                _channel_result(3, ""),
+                _channel_result(4, ""),
+                _channel_result(5, ""),
+                _channel_result(6, ""),
+                _channel_result(7, ""),
+            ]
+        )
+
+        channels = await manager.get_channels()
+
+        assert [ch["name"] for ch in channels] == ["Public", "Ops"]
+        assert channels[1]["channel_idx"] == 1
+        assert mock_meshcore.commands.get_channel.call_count == 8
 
 
 class TestRoomManager:
