@@ -20,7 +20,9 @@ if [ -z "$PYPI_TOKEN" ] || [ "$PYPI_TOKEN" = "pypi-your-token-here" ]; then
 fi
 
 # Activate virtual environment if it exists
-if [ -d "venv" ]; then
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+elif [ -d "venv" ]; then
     source venv/bin/activate
 fi
 

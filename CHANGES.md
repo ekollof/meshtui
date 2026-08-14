@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## Version 0.2.10 (2026-08-14)
+
 ### Low-power hosts
 - Stopped polling the radio for messages every 2 seconds. New messages already arrive via events; the poll issued up to 50 serial commands per tick and made original Pi B hardware unusable (#9).
 - Default file logs are INFO. Use `--debug` for packet-level traces.

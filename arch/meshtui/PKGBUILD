@@ -1,6 +1,6 @@
 # Maintainer: Emiel Kollof <emiel@kollof.nl>
 pkgname=meshtui
-pkgver=0.1.0
+pkgver=0.2.10
 pkgrel=1
 pkgdesc="Terminal User Interface for MeshCore companion radios"
 arch=('any')
