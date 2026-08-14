@@ -10,6 +10,7 @@ from typing import Optional, Callable, Awaitable
 import serial_asyncio
 
 from . import Backend
+from ..framing import HOST_TO_DEVICE, MAX_FRAME_SIZE, encode_frame, find_frame_start
 
 logger = logging.getLogger("meshcore.proxy.serial")
 
@@ -65,11 +66,10 @@ class SerialBackend(Backend):
         self.transport = None
         self.frame_callback: Optional[Callable[[bytes], Awaitable[None]]] = None
 
-        # Frame parsing state (copied from meshcore)
-        self.frame_started = False
-        self.frame_size = 0
+        # Frame parsing state (matches current meshcore serial_cx)
         self.header = b""
         self.inframe = b""
+        self.frame_expected_size = 0
 
         # Connection state
         self._connected_event = asyncio.Event()
@@ -119,41 +119,58 @@ class SerialBackend(Backend):
     def handle_rx(self, data: bytes):
         """Parse incoming serial data into frames.
 
-        This is copied directly from meshcore's serial_cx.py handle_rx() method.
-        It handles the 0x3C framing protocol with proper state management.
+        Device → host frames start with 0x3E; older firmware used 0x3C.
+        Both markers are accepted. Leading console/debug bytes are skipped.
 
         Args:
             data: Raw bytes from serial port
         """
-        headerlen = len(self.header)
-        framelen = len(self.inframe)
+        if not data:
+            return
 
-        if not self.frame_started:  # Wait for start of frame
-            if len(data) >= 3 - headerlen:
-                self.header = self.header + data[: 3 - headerlen]
-                self.frame_started = True
-                self.frame_size = int.from_bytes(self.header[1:], byteorder="little")
-                self.handle_rx(data[3 - headerlen :])
-            else:
-                self.header = self.header + data
-        else:
-            if framelen + len(data) < self.frame_size:
-                self.inframe = self.inframe + data
-            else:
-                self.inframe = self.inframe + data[: self.frame_size - framelen]
+        if len(self.header) == 0:
+            idx = find_frame_start(data)
+            if idx < 0:
+                return
+            data = data[idx:]
+            self.header = data[0:1]
+            data = data[1:]
 
-                # Complete frame received - call callback
-                if self.frame_callback is not None:
-                    asyncio.create_task(self.frame_callback(self.inframe))
-
-                # Reset for next frame
-                self.frame_started = False
+        if len(self.header) < 3:
+            need = 3 - len(self.header)
+            self.header = self.header + data[:need]
+            data = data[need:]
+            if len(self.header) < 3:
+                return
+            self.frame_expected_size = int.from_bytes(self.header[1:3], "little")
+            if self.frame_expected_size > MAX_FRAME_SIZE:
+                logger.debug(
+                    f"Invalid serial frame size {self.frame_expected_size}, resyncing"
+                )
+                leftover = data
                 self.header = b""
                 self.inframe = b""
+                self.frame_expected_size = 0
+                if leftover:
+                    self.handle_rx(leftover)
+                return
 
-                # Handle any remaining data
-                if framelen + len(data) > self.frame_size:
-                    self.handle_rx(data[self.frame_size - framelen :])
+        remaining = self.frame_expected_size - len(self.inframe)
+        if len(data) < remaining:
+            self.inframe = self.inframe + data
+            return
+
+        self.inframe = self.inframe + data[:remaining]
+        leftover = data[remaining:]
+
+        if self.frame_callback is not None:
+            asyncio.create_task(self.frame_callback(self.inframe))
+
+        self.header = b""
+        self.inframe = b""
+        self.frame_expected_size = 0
+        if leftover:
+            self.handle_rx(leftover)
 
     async def send_frame(self, frame: bytes):
         """Send frame to serial device.
@@ -165,9 +182,7 @@ class SerialBackend(Backend):
             logger.error("Transport not connected, cannot send frame")
             return
 
-        # Build packet with 0x3C framing
-        size = len(frame)
-        pkt = b"\x3c" + size.to_bytes(2, byteorder="little") + frame
+        pkt = encode_frame(frame, HOST_TO_DEVICE)
 
         logger.debug(f"Sending frame: {pkt.hex()} ({len(frame)} bytes payload)")
         self.transport.write(pkt)

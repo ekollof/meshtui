@@ -472,7 +472,7 @@ The MeshCore TCP Proxy allows you to expose USB Serial or BLE-connected MeshCore
 
 ### Features
 
-- **Zero protocol translation** - Identical framing across Serial/BLE/TCP
+- **Companion framing** - Host→device `0x3C`, device→host `0x3E` (same as MeshCore serial/BLE/TCP)
 - **Multi-client support** - Multiple meshtui instances can connect simultaneously
 - **Remote access** - Access locally-connected devices over network
 - **TCP testing** - Test TCP connectivity without WiFi firmware

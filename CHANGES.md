@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### TCP proxy
+- Device-to-host frames are now wrapped with `0x3E`, matching MeshCore's TCP client. The proxy previously re-framed replies as `0x3C`, so `create_tcp()` ignored the SELF_INFO response and timed out with "No response from meshcore node" (#11).
+- Serial receive now syncs on `0x3E`/`0x3C` instead of treating the first three bytes as a header.
+- TCP connect no longer crashes with `'NoneType' object has no attribute 'commands'` when the handshake fails.
+
 ### Installation
 - **Desktop notifications are optional.** `notify2` and `dbus-python` are no longer required dependencies. Install `meshtui[notifications]` on Linux if you want D-Bus desktop alerts. This unblocks installs on macOS, Windows, and minimal Debian containers (#3, #5, #6).
 - Documented Debian/Ubuntu build packages (`pkg-config`, `libdbus-1-dev`, `libglib2.0-dev`) for the notifications extra.

@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Dict, Optional, Callable, Awaitable
 
+from .framing import DEVICE_TO_HOST, HOST_TO_DEVICE, encode_frame
+
 logger = logging.getLogger("meshcore.proxy.tcp")
 
 
@@ -120,7 +122,7 @@ class TCPServer:
     async def _read_frame(self, reader: asyncio.StreamReader) -> Optional[bytes]:
         """Read one complete frame from TCP client.
 
-        Frame format:
+        Frame format (host → device, same as MeshCore TCP send()):
         - 0x3C (1 byte)
         - Size (2 bytes, little-endian)
         - Payload (size bytes)
@@ -138,8 +140,9 @@ class TCPServer:
             if len(header) == 0:
                 return None
 
-            # Validate start marker
-            if header[0] != 0x3C:
+            # Clients send host→device frames (0x3C). Accept 0x3E as well
+            # so a misframed client is not silently dropped.
+            if header[0] not in (HOST_TO_DEVICE, DEVICE_TO_HOST):
                 logger.error(f"Invalid frame start marker: 0x{header[0]:02x}")
                 return None
 
@@ -165,9 +168,9 @@ class TCPServer:
             logger.debug("No clients connected, frame not sent")
             return
 
-        # Build packet with 0x3C framing
-        size = len(frame)
-        pkt = b"\x3c" + size.to_bytes(2, byteorder="little") + frame
+        # Device → host uses 0x3E. meshcore.tcp_cx.handle_rx() looks for
+        # that marker and ignores 0x3C-wrapped replies (see issue #11).
+        pkt = encode_frame(frame, DEVICE_TO_HOST)
 
         logger.debug(f"Broadcasting frame to {len(self.clients)} client(s): {len(frame)} bytes")
 

@@ -367,6 +367,13 @@ class MeshConnection:
             self.meshcore = await MeshCore.create_tcp(
                 host=hostname, port=port, debug=False, only_error=False
             )
+            if self.meshcore is None:
+                self.logger.error(
+                    "TCP handshake failed: no response from the MeshCore node. "
+                    "If this is meshcore-tcp-proxy, update the proxy — "
+                    "device-to-host frames must be wrapped with 0x3E."
+                )
+                return False
 
             # Test connection
             result = await self.meshcore.commands.send_device_query()
