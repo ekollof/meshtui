@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Channel replies
+- Type `@` in a channel and press Tab to complete `@[Name]: ` from recent senders (#1).
+- F4 prefills a reply to the last person who spoke in the current channel.
+- Incoming channel messages that mention you are highlighted.
+
 ### Compact UI
 - Small terminals (under 80×24) switch to compact chrome; the contacts sidebar auto-hides under 60 columns so chat can go full width (#2).
 - `F2` toggles the sidebar, `F3` toggles compact mode, `meshtui --compact` starts that way. Choice is stored in `~/.config/meshtui/ui.json`.

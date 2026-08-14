@@ -39,6 +39,16 @@ MeshTUI provides comprehensive message delivery tracking for direct messages:
 
 **Note**: Channel broadcasts show "✓ Sent (broadcast)" and don't have ACK tracking (per MeshCore API design).
 
+#### Channel replies and @mentions
+
+Channel replies use the same text format as the official MeshCore apps:
+
+```
+@[Alice]: thanks, that path worked
+```
+
+In a channel, type `@` or `@[` plus a few letters of a nickname and press **Tab** (or Right) to complete it. Candidates are people who have spoken in that channel, then your contacts. **F4** prefills a reply to the last incoming sender. Messages that mention your name are highlighted.
+
 #### Delivery Status Database
 
 All messages are tracked in the database with delivery information:
@@ -290,7 +300,8 @@ When the sidebar is hidden, a **Show contacts (F2)** bar appears above the chat,
 - `F1` - Show help
 - `F2` - Toggle contacts sidebar
 - `F3` - Toggle compact mode
-- `Tab` - Navigate between UI elements
+- `F4` - Reply to the last person who spoke in the current channel
+- `Tab` - Complete an `@` mention in the message box (or move focus)
 - `Enter` - Send message or activate button
 
 ### First Time Setup

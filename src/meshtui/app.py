@@ -38,6 +38,12 @@ from textual.binding import Binding
 
 from .channel import parse_channel_secret
 from .connection import MeshConnection
+from .mentions import (
+    MentionSuggester,
+    format_mention,
+    message_mentions,
+    nicknames_from_messages,
+)
 
 
 def resolve_layout(
@@ -61,6 +67,22 @@ def resolve_layout(
     else:
         show_sidebar = sidebar_override
     return compact, show_sidebar
+
+
+class MessageInput(Input):
+    """Chat input that accepts @mention completions with Tab."""
+
+    BINDINGS = [
+        Binding("tab", "accept_mention", "Complete @", show=False),
+    ]
+
+    def action_accept_mention(self) -> None:
+        """Accept the current @mention suggestion, or move focus."""
+        if self._suggestion and self.cursor_at_end:
+            self.value = self._suggestion
+            self.cursor_position = len(self.value)
+            return
+        self.app.action_focus_next()
 
 
 class InstantButton(Button):
@@ -136,6 +158,7 @@ class MeshTUI(App):
         Binding("f1", "show_help", "Help"),
         Binding("f2", "toggle_sidebar", "Sidebar"),
         Binding("f3", "toggle_compact", "Compact"),
+        Binding("f4", "reply_last", "Reply"),
     ]
 
     # Terminal sizes (cells) that trigger automatic compact layout.
@@ -219,9 +242,10 @@ class MeshTUI(App):
 
                             # Input area
                             with Horizontal(id="input-container"):
-                                yield Input(
-                                    placeholder="Type message or command...",
+                                yield MessageInput(
+                                    placeholder="Type message, or @ to mention...",
                                     id="message-input",
+                                    suggester=MentionSuggester(self._mention_candidates),
                                 )
                                 yield Button("Send", id="send-btn", variant="primary")
 
@@ -1924,6 +1948,7 @@ class MeshTUI(App):
             # Load message history for this channel using refresh_messages
             await self.refresh_messages()
 
+            self.message_input.placeholder = "Type @ to mention, Tab to complete..."
             # Focus the message input
             self.message_input.focus()
 
@@ -2014,6 +2039,57 @@ class MeshTUI(App):
     def show_sidebar_button(self) -> None:
         """Reveal the sidebar from the compact chat header."""
         self.action_toggle_sidebar()
+
+    def _own_name(self) -> str:
+        """Advertised name of the connected radio, if known."""
+        try:
+            if self.connection and self.connection.db:
+                me = self.connection.db.get_contact_by_me()
+                if me:
+                    return str(me.get("name") or me.get("adv_name") or "")
+        except Exception:
+            pass
+        info = getattr(self.connection, "device_info", None) or {}
+        return str(info.get("name") or info.get("adv_name") or "")
+
+    def _mention_candidates(self) -> list:
+        """Nicknames to complete after @, recent channel senders first."""
+        messages = []
+        extra = []
+        if self.current_channel and self.connection:
+            messages = self.connection.get_messages_for_channel(self.current_channel)
+        if self.connection:
+            extra = [
+                c.get("name", "")
+                for c in self.connection.get_contacts()
+                if c.get("type", 0) in (0, 1)
+            ]
+        return nicknames_from_messages(
+            messages, extra=extra, exclude=[self._own_name()]
+        )
+
+    def _last_channel_sender(self) -> Optional[str]:
+        """Most recent incoming sender in the current channel."""
+        names = self._mention_candidates()
+        return names[0] if names else None
+
+    def action_reply_last(self) -> None:
+        """Prefill @[sender]: for the last person who spoke in this channel."""
+        if self._awaiting_room_password:
+            return
+        if not self.current_channel:
+            self.notify("Select a channel to reply", severity="warning")
+            return
+        name = self._last_channel_sender()
+        if not name:
+            self.notify("No one to reply to in this channel", severity="warning")
+            return
+        prefix = format_mention(name)
+        current = self.message_input.value
+        if not current.startswith(prefix):
+            self.message_input.value = prefix + current
+        self.message_input.cursor_position = len(self.message_input.value)
+        self.message_input.focus()
 
     def action_help(self) -> None:
         """Show help information."""
@@ -2167,8 +2243,10 @@ class MeshTUI(App):
                             f"[dim]{time_str}[/dim] [blue]You:[/blue] {text}\n"
                         )
                     else:
+                        mention = message_mentions(text, self._own_name())
+                        name_style = "bold magenta" if mention else "yellow"
                         self.chat_area.write(
-                            f"[dim]{time_str}[/dim] [yellow]{sender}:[/yellow] {text}\n"
+                            f"[dim]{time_str}[/dim] [{name_style}]{sender}:[/{name_style}] {text}\n"
                         )
             else:
                 self.chat_area.write("[dim]No message history[/dim]")
@@ -2457,9 +2535,12 @@ class MeshTUI(App):
                 msg_text.append("You:", style="blue")
                 msg_text.append(f" {content}")
             elif msg_type == "channel":
+                mentioned = message_mentions(content, self._own_name())
                 msg_text.append(time_str, style="dim")
                 msg_text.append(" ")
-                msg_text.append(f"{sender}:", style="yellow")
+                msg_text.append(
+                    f"{sender}:", style="bold magenta" if mentioned else "yellow"
+                )
                 msg_text.append(f" {content}")
             else:
                 msg_text.append(time_str, style="dim")
@@ -3129,6 +3210,8 @@ class MeshTUI(App):
   • Type message in input field and press Enter to send
   • Direct messages: Select a contact first
   • Channel messages: Select a channel (e.g., Public)
+  • Reply in a channel: type @ then Tab, or press F4
+    Format: @[Name]: your reply  (same as the official apps)
   • Room messages: Login to room server first
   • Create channel: Click "+" button next to Channels
 
@@ -3167,6 +3250,8 @@ class MeshTUI(App):
   • F1 - Show this help
   • F2 - Toggle sidebar
   • F3 - Toggle compact mode
+  • F4 - Reply to last channel sender (@[name]:)
+  • Tab - Complete an @mention in the message box
 
 [bold yellow]Connection Types:[/bold yellow]
   • Direct contacts - Point-to-point messaging
