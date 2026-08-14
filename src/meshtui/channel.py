@@ -65,6 +65,7 @@ class ChannelManager:
         self.meshcore = meshcore
         self.logger = logging.getLogger("meshtui.channel")
         self._channels: List[Dict[str, Any]] = []
+        self.low_power = False
 
     async def send_message(self, channel: Union[str, int], message: str) -> bool:
         """Send a message to a channel.
@@ -142,11 +143,12 @@ class ChannelManager:
         try:
             self.logger.debug("Refreshing channels list")
             channels: List[Dict[str, Any]] = []
+            slot_timeout = 1.0 if self.low_power else 3.0
             # Query channels 0-7 (typical range for most devices)
             for idx in range(8):
                 try:
                     result = await asyncio.wait_for(
-                        self.meshcore.commands.get_channel(idx), timeout=3.0
+                        self.meshcore.commands.get_channel(idx), timeout=slot_timeout
                     )
                     if result.type != EventType.ERROR:
                         channel_info = result.payload or {}

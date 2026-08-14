@@ -200,6 +200,8 @@ meshtui --help
 - `-p, --port PORT`: TCP port (default: 5000)
 - `-a, --address ADDRESS`: Connect via BLE address or name
 - `--compact`: Start in compact mode with the sidebar hidden
+- `--low-power`: Lighter UI and no radio polling (auto-enabled on original Raspberry Pi-class hosts)
+- `--debug`: Write DEBUG logs to `~/.config/meshtui/meshtui.log`
 
 ### Device Identification
 
@@ -406,6 +408,7 @@ All application logs are automatically saved to a log file for postmortem analys
 - **Device not found**: Ensure the device is connected and appears in `/dev/ttyUSB*` or `/dev/ttyACM*`
 - **Logs not updating**: Switch to the Logs tab to view application logs
 - **Performance issues**: Check log file size and rotate if necessary
+- **Very slow on a Raspberry Pi B / Zero**: MeshTUI auto-enables `--low-power` on armv6 and other single-core ≤512MB hosts. Force it with `meshtui --low-power`. Use `meshtui --debug` only when diagnosing (DEBUG logs on an SD card are expensive).
 
 ## Configuration
 

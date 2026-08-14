@@ -48,13 +48,7 @@ class MeshConnection:
         self.device_info: Optional[Dict[str, Any]] = None
         self.messages: List[Dict[str, Any]] = []  # In-memory cache for quick access
         self.logger = logging.getLogger("meshtui.connection")
-
-        # Enable DEBUG logging for meshcore to see raw packets
-        meshcore_logger = logging.getLogger("meshcore")
-        meshcore_logger.setLevel(logging.DEBUG)
-        self.logger.info(
-            "🔍 Enabled DEBUG logging for meshcore library (raw packet logging)"
-        )
+        self.low_power = False
 
         # Managers (will be initialized after connection)
         self.contacts: Optional[ContactManager] = None
@@ -568,6 +562,7 @@ class MeshConnection:
         self.logger.debug("Initializing managers...")
         self.contacts = ContactManager(self.meshcore)
         self.channels = ChannelManager(self.meshcore)
+        self.channels.low_power = self.low_power
         self.rooms = RoomManager(self.meshcore, self.messages)
         self.logger.debug("Managers initialized")
 

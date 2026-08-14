@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Low-power hosts
+- Stopped polling the radio for messages every 2 seconds. New messages already arrive via events; the poll issued up to 50 serial commands per tick and made original Pi B hardware unusable (#9).
+- Default file logs are INFO. Use `--debug` for packet-level traces.
+- Auto-enable a lighter mode on armv6 / single-core ≤512MB hosts (`--low-power` to force, `MESHTUI_LOW_POWER=0` to disable): compact chrome, shorter history, ASCII list markers, shorter channel-query timeouts.
+
 ### Channel replies
 - Type `@` in a channel and press Tab to complete `@[Name]: ` from recent senders (#1).
 - F4 prefills a reply to the last person who spoke in the current channel.

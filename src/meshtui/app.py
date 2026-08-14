@@ -7,6 +7,8 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import platform
 from pathlib import Path
 from typing import Optional
 
@@ -44,6 +46,38 @@ from .mentions import (
     message_mentions,
     nicknames_from_messages,
 )
+
+
+def detect_low_power_host(
+    machine: Optional[str] = None,
+    cpu_count: Optional[int] = None,
+    mem_bytes: Optional[int] = None,
+    env: Optional[dict] = None,
+) -> bool:
+    """True on original Pi-class hosts (or when MESHTUI_LOW_POWER=1)."""
+    environ = env if env is not None else os.environ
+    flag = str(environ.get("MESHTUI_LOW_POWER", "")).strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        return True
+    if flag in {"0", "false", "no", "off"}:
+        return False
+
+    cpu = machine if machine is not None else platform.machine()
+    cpu = (cpu or "").lower()
+    if cpu in {"armv6l", "armv6", "armv5tel", "armv5tejl"}:
+        return True
+
+    cpus = cpu_count if cpu_count is not None else os.cpu_count() or 1
+    memory = mem_bytes
+    if memory is None:
+        try:
+            memory = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        except (ValueError, OSError, AttributeError):
+            memory = None
+    # Single-core and ≤512 MiB: original Pi B / similar boards
+    if cpus <= 1 and memory is not None and memory <= 512 * 1024 * 1024:
+        return True
+    return False
 
 
 def resolve_layout(
@@ -181,18 +215,26 @@ class MeshTUI(App):
 
         # Setup logging (will be configured in on_mount)
         self.logger = logging.getLogger("meshtui")
-        self.logger.setLevel(logging.DEBUG)  # Enable debug logging
+        self.logger.setLevel(
+            logging.DEBUG if getattr(args, "debug", False) else logging.INFO
+        )
 
         # Layout: None = pick from terminal size, True/False = user override
         self._sidebar_override: Optional[bool] = None
         self._compact_override: Optional[bool] = None
+        self.low_power = bool(getattr(args, "low_power", False))
+        self.history_limit = 40 if self.low_power else 100
+        if self.low_power:
+            self.connection.low_power = True
         if getattr(args, "compact", False):
             self._compact_override = True
             self._sidebar_override = False
+        elif self.low_power and self._compact_override is None:
+            self._compact_override = True
 
         # Setup desktop notifications
         self.notifications_enabled = False
-        if NOTIFICATIONS_AVAILABLE:
+        if NOTIFICATIONS_AVAILABLE and not self.low_power:
             try:
                 notify2.init("MeshTUI")
                 self.notifications_enabled = True
@@ -553,7 +595,10 @@ class MeshTUI(App):
         root_logger = logging.getLogger()
         root_logger.addHandler(self.log_handler)
 
-        self.logger.info("MeshTUI started - logging to ~/.config/meshtui/meshtui.log")
+        mode = "low-power" if self.low_power else "normal"
+        self.logger.info(
+            f"MeshTUI started ({mode}) - logging to ~/.config/meshtui/meshtui.log"
+        )
 
         # Register message callback for notifications
         self.connection.set_message_callback(self._on_new_message)
@@ -564,8 +609,8 @@ class MeshTUI(App):
         # Try to auto-connect in background (non-blocking)
         asyncio.create_task(self.auto_connect())
 
-        # Start periodic message refresh (every 2 seconds)
-        self.set_interval(2.0, self.periodic_message_refresh)
+        # Incoming messages arrive via the event callback; do not poll
+        # the radio on a timer (that made original Pi-class boards crawl).
 
         # Restore saved layout, then fit the current terminal
         if not getattr(self.args, "compact", False):
@@ -2407,13 +2452,21 @@ class MeshTUI(App):
                     color = "red"
 
                 # Format display with unread indicator and freshness
-                type_icon = "🏠" if contact_type == 3 else ""  # Room server icon
-                if unread > 0:
-                    display_text = (
-                        f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
-                    )
+                if self.low_power:
+                    mark = "*" if unread > 0 else "-"
+                    type_icon = "R " if contact_type == 3 else ""
+                    extra = f" ({unread})" if unread > 0 else ""
+                    display_text = f"[{color}]{mark}[/{color}] {type_icon}{contact_name}{extra}"
                 else:
-                    display_text = f"[{color}]○[/{color}] {type_icon}{contact_name}"
+                    type_icon = "🏠" if contact_type == 3 else ""
+                    if unread > 0:
+                        display_text = (
+                            f"[{color}]●[/{color}] {type_icon}{contact_name} ({unread})"
+                        )
+                    else:
+                        display_text = (
+                            f"[{color}]○[/{color}] {type_icon}{contact_name}"
+                        )
 
                 # Create ListItem with sanitized contact name as id for data retrieval
                 contact_id = f"contact-{sanitize_id(contact_name)}"
@@ -2560,16 +2613,14 @@ class MeshTUI(App):
         try:
             self.logger.debug("Refreshing messages...")
 
-            # Clear the chat area and force render
+            # Clear the chat area
             self.chat_area.clear()
-            # Force a refresh cycle to ensure clear completes
-            await asyncio.sleep(0.01)
 
             # Get filtered messages based on current view
             if self.current_contact:
                 messages = self.connection.get_messages_for_contact(
                     self.current_contact
-                )
+                )[-self.history_limit :]
                 self.logger.debug(
                     f"Retrieved {len(messages)} messages for contact {self.current_contact}"
                 )
@@ -2578,7 +2629,7 @@ class MeshTUI(App):
                     self.current_channel
                     if isinstance(self.current_channel, str)
                     else "Public"
-                )
+                )[-self.history_limit :]
                 self.logger.debug(
                     f"Retrieved {len(messages)} messages for channel {self.current_channel}"
                 )
@@ -2595,6 +2646,14 @@ class MeshTUI(App):
             chat_text = Text()
             
             self.logger.debug(f"Building chat text with {len(messages)} messages")
+
+            my_contact = (
+                self.connection.db.get_contact_by_me()
+                if self.connection and self.connection.db
+                else None
+            )
+            my_pubkey = my_contact.get("public_key") if my_contact else None
+            contact_by_name = {}
 
             for msg in messages:
                 # Format timestamp
@@ -2632,43 +2691,50 @@ class MeshTUI(App):
                 delivery_status = msg.get("delivery_status", "sent")
                 repeat_count = msg.get("repeat_count", 0)
                 status_glyph = ""
-                if msg_type == "channel":
-                    status_glyph = " 📡"  # Broadcast
+                if self.low_power:
+                    if msg_type == "channel":
+                        status_glyph = " *"
+                    elif delivery_status == "failed":
+                        status_glyph = " x"
+                    elif delivery_status == "repeated":
+                        status_glyph = f" x{repeat_count}" if repeat_count > 0 else " +"
+                    elif delivery_status == "sent":
+                        status_glyph = " +"
+                elif msg_type == "channel":
+                    status_glyph = " 📡"
                 elif delivery_status == "failed":
-                    status_glyph = " ❌"  # Failed
+                    status_glyph = " ❌"
                 elif delivery_status == "repeated":
-                    status_glyph = f" ✓×{repeat_count}" if repeat_count > 0 else " ✓"  # Repeated
+                    status_glyph = f" ✓×{repeat_count}" if repeat_count > 0 else " ✓"
                 elif delivery_status == "sent":
-                    status_glyph = " ✓"  # Sent
+                    status_glyph = " ✓"
 
                 # Check if this message is from me by comparing pubkeys
                 is_from_me = False
-                my_contact = (
-                    self.connection.db.get_contact_by_me() if self.connection else None
-                )
-                if my_contact:
-                    my_pubkey = my_contact.get("public_key")
-                    if my_pubkey:
-                        # Check if any of the sender fields match our pubkey (prefix or full)
-                        if sender_pubkey and (
-                            sender_pubkey == my_pubkey
-                            or my_pubkey.startswith(sender_pubkey)
-                        ):
-                            is_from_me = True
-                        elif actual_sender_pubkey and (
-                            actual_sender_pubkey == my_pubkey
-                            or my_pubkey.startswith(actual_sender_pubkey)
-                        ):
-                            is_from_me = True
-                        elif signature and (
-                            signature == my_pubkey or my_pubkey.startswith(signature)
-                        ):
-                            is_from_me = True
+                if my_pubkey:
+                    if sender_pubkey and (
+                        sender_pubkey == my_pubkey
+                        or my_pubkey.startswith(sender_pubkey)
+                    ):
+                        is_from_me = True
+                    elif actual_sender_pubkey and (
+                        actual_sender_pubkey == my_pubkey
+                        or my_pubkey.startswith(actual_sender_pubkey)
+                    ):
+                        is_from_me = True
+                    elif signature and (
+                        signature == my_pubkey or my_pubkey.startswith(signature)
+                    ):
+                        is_from_me = True
                 elif sender == "Me":
                     is_from_me = True
 
                 # Check if sender is a room server (type 3)
-                sender_contact = self.connection.get_contact_by_name(sender)
+                if sender not in contact_by_name:
+                    contact_by_name[sender] = self.connection.get_contact_by_name(
+                        sender
+                    )
+                sender_contact = contact_by_name[sender]
                 is_room_server = sender_contact and sender_contact.get("type") == 3
 
                 # If no actual_sender but we have a signature, try to decode it
@@ -2724,18 +2790,6 @@ class MeshTUI(App):
             
             # Write all messages at once
             if chat_text:
-                self.logger.debug(f"Writing chat_text with length: {len(chat_text.plain)}, repr: {repr(chat_text.plain[:200])}")
-                # Write without the trailing newline - RichLog.write() adds one automatically
-                if chat_text.plain.endswith('\n'):
-                    # Rebuild Text without trailing newline while preserving all styling
-                    lines = chat_text.split('\n')
-                    new_text = Text()
-                    for i, line in enumerate(lines):
-                        if i > 0:
-                            new_text.append('\n')
-                        if i < len(lines) - 1 or line.plain:  # Skip empty last line
-                            new_text.append(line)
-                    chat_text = new_text
                 self.chat_area.write(chat_text)
 
         except asyncio.TimeoutError:
@@ -2745,47 +2799,6 @@ class MeshTUI(App):
             import traceback
 
             self.logger.debug(f"Message refresh traceback: {traceback.format_exc()}")
-
-    async def periodic_message_refresh(self) -> None:
-        """Periodically check for and display new messages."""
-        if not self.connection.is_connected():
-            return
-
-        try:
-            # Track the number of messages we've already displayed
-            if not hasattr(self, "_displayed_message_count"):
-                self._displayed_message_count = 0
-
-            # Get all messages
-            all_messages = await self.connection.get_messages()
-
-            # Only display new messages
-            new_messages = all_messages[self._displayed_message_count :]
-
-            for msg in new_messages:
-                sender = msg.get("sender", "Unknown")
-                content = msg.get("text", "")
-                msg_type = msg.get("type", "")
-
-                # Filter based on current view
-                if self.current_contact:
-                    # Show messages from/to this contact (including room messages)
-                    if (
-                        msg_type == "contact" or msg_type == "room"
-                    ) and sender == self.current_contact:
-                        self.chat_area.write(f"[green]{sender}:[/green] {content}\n")
-                elif self.current_channel is not None:
-                    # Show messages from this channel
-                    if (
-                        msg_type == "channel"
-                        and msg.get("channel") == self.current_channel
-                    ):
-                        self.chat_area.write(f"[cyan]{sender}:[/cyan] {content}\n")
-
-            self._displayed_message_count = len(all_messages)
-
-        except Exception as e:
-            self.logger.debug(f"Periodic refresh error: {e}")
 
     @on(Button.Pressed, "#node-login-btn")
     async def node_login(self) -> None:
@@ -3243,6 +3256,8 @@ class MeshTUI(App):
   • F3 - Compact chrome (shorter headers, less padding)
   • Auto-enables under 80x24 (sidebar hides under 60 columns)
   • meshtui --compact  starts in compact mode with sidebar hidden
+  • meshtui --low-power  lighter mode for original Pi-class hosts
+    (auto-detected on armv6 / single-core ≤512MB)
 
 [bold yellow]Keyboard Shortcuts:[/bold yellow]
   • Ctrl+C - Quit application
@@ -3288,7 +3303,7 @@ def main():
     """Main entry point."""
     # Configure logging to prevent stdout output
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)  # Allow all levels through root
+    root_logger.setLevel(logging.INFO)
     # Remove any existing handlers to prevent stdout output
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
@@ -3307,19 +3322,16 @@ def main():
         maxBytes=5 * 1024 * 1024,  # 5MB per file
         backupCount=3,  # Keep 3 backup files
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO)
     file_formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     file_handler.setFormatter(file_formatter)
     root_logger.addHandler(file_handler)
 
-    # Enable meshcore debug logging - force propagate and add handler
     meshcore_logger = logging.getLogger("meshcore")
-    meshcore_logger.setLevel(logging.DEBUG)
+    meshcore_logger.setLevel(logging.INFO)
     meshcore_logger.propagate = True
-    meshcore_logger.addHandler(file_handler)  # Add our file handler directly
-    meshcore_logger.info("Meshcore logging enabled at DEBUG level")
 
     # Log startup message to file
     startup_logger = logging.getLogger("meshtui.startup")
@@ -3348,8 +3360,25 @@ def main():
         action="store_true",
         help="Start in compact mode with the sidebar hidden (small screens)",
     )
+    parser.add_argument(
+        "--low-power",
+        action="store_true",
+        help="Lighter UI and less radio chatter (auto-enabled on original Pi-class hosts)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Write DEBUG logs (default is INFO; DEBUG is heavy on SD cards)",
+    )
 
     args = parser.parse_args()
+    if not args.low_power and not args.debug:
+        args.low_power = detect_low_power_host()
+
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    root_logger.setLevel(log_level)
+    file_handler.setLevel(log_level)
+    meshcore_logger.setLevel(log_level)
 
     app = MeshTUI(args)
     app.run()
