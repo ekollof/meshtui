@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Compact UI
+- Small terminals (under 80×24) switch to compact chrome; the contacts sidebar auto-hides under 60 columns so chat can go full width (#2).
+- `F2` toggles the sidebar, `F3` toggles compact mode, `meshtui --compact` starts that way. Choice is stored in `~/.config/meshtui/ui.json`.
+
 ### TCP proxy
 - Device-to-host frames are now wrapped with `0x3E`, matching MeshCore's TCP client. The proxy previously re-framed replies as `0x3C`, so `create_tcp()` ignored the SELF_INFO response and timed out with "No response from meshcore node" (#11).
 - Serial receive now syncs on `0x3E`/`0x3C` instead of treating the first three bytes as a header.

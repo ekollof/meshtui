@@ -176,6 +176,9 @@ meshtui --tcp 192.168.1.100 --port 5000
 # Connect via BLE address
 meshtui --address C2:2B:A1:D5:3E:B6
 
+# Compact layout for small displays (PicoCalc, 320x320, etc.)
+meshtui --compact
+
 # Show help
 meshtui --help
 ```
@@ -186,6 +189,7 @@ meshtui --help
 - `-t, --tcp TCP`: Connect via TCP/IP hostname
 - `-p, --port PORT`: TCP port (default: 5000)
 - `-a, --address ADDRESS`: Connect via BLE address or name
+- `--compact`: Start in compact mode with the sidebar hidden
 
 ### Device Identification
 
@@ -268,11 +272,24 @@ Creating a channel named `#team` will:
 - Allow anyone with `#team` to decrypt messages
 - Secure from others who don't know the channel name
 
+### Small screens
+
+On terminals under 80×24 (for example a PicoCalc 320×320 display), MeshTUI switches to compact chrome automatically and hides the contacts sidebar under 60 columns so the chat can use the full width.
+
+- `F2` — show or hide the contacts/channels sidebar
+- `F3` — force compact mode on or off
+- `meshtui --compact` — start with compact chrome and the sidebar hidden
+- Choice is saved in `~/.config/meshtui/ui.json`
+
+When the sidebar is hidden, a **Show contacts (F2)** bar appears above the chat, and the header subtitle shows the active conversation.
+
 ### Key Bindings
 
 - `Ctrl+C` - Quit the application
 - `Ctrl+R` - Refresh current view
 - `F1` - Show help
+- `F2` - Toggle contacts sidebar
+- `F3` - Toggle compact mode
 - `Tab` - Navigate between UI elements
 - `Enter` - Send message or activate button
 

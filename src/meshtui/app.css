@@ -534,3 +534,135 @@ TextArea:focus {
     width: 30%;
     margin: 0 0 0 1;
 }
+
+/* Reveal bar is hidden unless the sidebar is off */
+#show-sidebar-btn {
+    display: none;
+    height: 1;
+    min-height: 1;
+    width: 100%;
+    margin: 0;
+    border: none;
+}
+
+/* --- Small-screen / compact layout (#2) --- */
+
+App.sidebar-hidden #sidebar {
+    display: none;
+}
+
+App.sidebar-hidden #main-content {
+    width: 100%;
+}
+
+App.sidebar-hidden #show-sidebar-btn {
+    display: block;
+}
+
+App.compact Header {
+    height: 1;
+}
+
+App.compact #sidebar {
+    width: 18;
+    min-width: 16;
+}
+
+App.compact #main-content {
+    width: 1fr;
+}
+
+App.compact #contacts-header,
+App.compact #channels-header,
+App.compact #channels-header-row,
+App.compact #logs-header,
+App.compact #settings-header,
+App.compact #nodes-header,
+App.compact #node-control-header,
+App.compact #contact-info-header {
+    height: 1;
+    min-height: 1;
+    margin-top: 0;
+}
+
+App.compact #create-channel-btn,
+App.compact #delete-channel-btn {
+    width: 3;
+    min-width: 3;
+    height: 1;
+}
+
+App.compact #scan-ble-btn,
+App.compact #advert-0hop-btn,
+App.compact #advert-flood-btn {
+    display: none;
+}
+
+App.compact .help-text {
+    display: none;
+}
+
+App.compact #input-container {
+    height: 3;
+}
+
+App.compact #message-input,
+App.compact #send-btn {
+    height: 1;
+    margin: 0 1;
+}
+
+App.compact #send-btn {
+    width: 6;
+    min-width: 6;
+}
+
+App.compact #chat-area,
+App.compact #log-panel,
+App.compact #node-status-area {
+    margin: 0 1;
+}
+
+App.compact #contact-details-row {
+    layout: vertical;
+    margin: 0;
+}
+
+App.compact #contact-details-column,
+App.compact #contact-network-column {
+    width: 100%;
+}
+
+App.compact #contact-notes-input {
+    height: 4;
+}
+
+App.compact #contact-actions-buttons,
+App.compact #dialog-buttons {
+    height: 3;
+}
+
+App.compact #contact-actions-buttons Button,
+App.compact #dialog-buttons Button {
+    height: 1;
+}
+
+App.compact #node-list-container {
+    width: 30%;
+}
+
+App.compact #node-control-container {
+    width: 70%;
+}
+
+App.compact #create-channel-dialog,
+App.compact #ble-scanner-dialog,
+App.compact #delete-channel-dialog {
+    width: 36;
+    max-width: 100%;
+    padding: 1;
+}
+
+App.compact #ble-scanner-dialog {
+    height: 20;
+}

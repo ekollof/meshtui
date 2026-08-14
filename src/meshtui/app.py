@@ -5,6 +5,7 @@ meshtui - Full-featured MeshCore client with Terminal UI
 
 import argparse
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -37,6 +38,29 @@ from textual.binding import Binding
 
 from .channel import parse_channel_secret
 from .connection import MeshConnection
+
+
+def resolve_layout(
+    width: int,
+    height: int,
+    sidebar_override: Optional[bool],
+    compact_override: Optional[bool],
+    compact_width: int = 80,
+    compact_height: int = 24,
+    narrow_width: int = 60,
+) -> tuple[bool, bool]:
+    """Decide compact chrome and sidebar visibility.
+
+    Returns:
+        (compact, show_sidebar)
+    """
+    auto_compact = width < compact_width or height < compact_height
+    compact = compact_override if compact_override is not None else auto_compact
+    if sidebar_override is None:
+        show_sidebar = width >= narrow_width
+    else:
+        show_sidebar = sidebar_override
+    return compact, show_sidebar
 
 
 class InstantButton(Button):
@@ -110,7 +134,15 @@ class MeshTUI(App):
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+r", "refresh", "Refresh"),
         Binding("f1", "show_help", "Help"),
+        Binding("f2", "toggle_sidebar", "Sidebar"),
+        Binding("f3", "toggle_compact", "Compact"),
     ]
+
+    # Terminal sizes (cells) that trigger automatic compact layout.
+    COMPACT_WIDTH = 80
+    COMPACT_HEIGHT = 24
+    NARROW_WIDTH = 60
+    UI_PREFS_FILE = Path.home() / ".config" / "meshtui" / "ui.json"
 
     def __init__(self, args):
         super().__init__()
@@ -127,6 +159,13 @@ class MeshTUI(App):
         # Setup logging (will be configured in on_mount)
         self.logger = logging.getLogger("meshtui")
         self.logger.setLevel(logging.DEBUG)  # Enable debug logging
+
+        # Layout: None = pick from terminal size, True/False = user override
+        self._sidebar_override: Optional[bool] = None
+        self._compact_override: Optional[bool] = None
+        if getattr(args, "compact", False):
+            self._compact_override = True
+            self._sidebar_override = False
 
         # Setup desktop notifications
         self.notifications_enabled = False
@@ -169,6 +208,9 @@ class MeshTUI(App):
 
             # Main content area with tabs
             with Vertical(id="main-content"):
+                yield InstantButton(
+                    "Show contacts (F2)", id="show-sidebar-btn", variant="primary"
+                )
                 with TabbedContent():
                     with TabPane("Chat", id="chat-tab"):
                         with Vertical(id="chat-container"):
@@ -500,6 +542,11 @@ class MeshTUI(App):
 
         # Start periodic message refresh (every 2 seconds)
         self.set_interval(2.0, self.periodic_message_refresh)
+
+        # Restore saved layout, then fit the current terminal
+        if not getattr(self.args, "compact", False):
+            self._load_ui_prefs()
+        self._apply_layout()
 
     def _populate_command_reference(self):
         """Populate the command reference cheat sheet."""
@@ -1741,6 +1788,7 @@ class MeshTUI(App):
             self.current_contact = contact_name
             self.current_contact_pubkey = pubkey
             self.current_channel = None  # Clear channel selection
+            self._update_subtitle()
 
             # Show Contact Info tab for contacts (has relevant metadata)
             self.tabbed_content.show_tab("contact-info-tab")
@@ -1828,6 +1876,7 @@ class MeshTUI(App):
             self.current_channel = channel_name
             self.current_contact = None  # Clear contact selection
             self.current_contact_pubkey = None  # Clear contact pubkey
+            self._update_subtitle()
             self.logger.info(f"Selected channel: {channel_name}")
 
             # Hide Contact Info tab since channels don't have contact metadata
@@ -1881,6 +1930,90 @@ class MeshTUI(App):
     def action_refresh(self) -> None:
         """Refresh the current view."""
         self.logger.info("Refreshing...")
+
+    def on_resize(self, event) -> None:
+        """Re-evaluate compact / sidebar layout when the terminal changes size."""
+        self._apply_layout()
+
+    def _load_ui_prefs(self) -> None:
+        """Load sidebar/compact overrides from ~/.config/meshtui/ui.json."""
+        try:
+            if not self.UI_PREFS_FILE.exists():
+                return
+            data = json.loads(self.UI_PREFS_FILE.read_text(encoding="utf-8"))
+            if "sidebar" in data:
+                self._sidebar_override = data["sidebar"]
+            if "compact" in data:
+                self._compact_override = data["compact"]
+        except Exception as e:
+            self.logger.debug(f"Could not load UI prefs: {e}")
+
+    def _save_ui_prefs(self) -> None:
+        """Persist sidebar/compact overrides."""
+        try:
+            self.UI_PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "sidebar": self._sidebar_override,
+                "compact": self._compact_override,
+            }
+            self.UI_PREFS_FILE.write_text(
+                json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+            )
+        except Exception as e:
+            self.logger.debug(f"Could not save UI prefs: {e}")
+
+    def _apply_layout(self) -> None:
+        """Apply compact chrome and sidebar visibility for the current size."""
+        size = self.size
+        if size.width <= 0 or size.height <= 0:
+            return
+
+        compact, show_sidebar = resolve_layout(
+            size.width,
+            size.height,
+            self._sidebar_override,
+            self._compact_override,
+            self.COMPACT_WIDTH,
+            self.COMPACT_HEIGHT,
+            self.NARROW_WIDTH,
+        )
+        self.set_class(compact, "compact")
+        try:
+            self.query_one(Header).tall = not compact
+        except Exception:
+            pass
+
+        self.set_class(not show_sidebar, "sidebar-hidden")
+        self._update_subtitle()
+
+    def _update_subtitle(self) -> None:
+        """Show the active chat when the sidebar is hidden."""
+        target = self.current_contact or self.current_channel or ""
+        if self.has_class("sidebar-hidden") and target:
+            self.sub_title = str(target)
+        else:
+            self.sub_title = "MeshCore Companion Radio TUI"
+
+    def action_toggle_sidebar(self) -> None:
+        """Show or hide the contacts/channels sidebar (F2)."""
+        show = self.has_class("sidebar-hidden")
+        self._sidebar_override = show
+        self._apply_layout()
+        self._save_ui_prefs()
+        self.notify("Sidebar shown" if show else "Sidebar hidden", timeout=2)
+
+    def action_toggle_compact(self) -> None:
+        """Force compact chrome on or off (F3)."""
+        compact = not self.has_class("compact")
+        self._compact_override = compact
+        self._apply_layout()
+        self._save_ui_prefs()
+        self.notify("Compact mode on" if compact else "Compact mode off", timeout=2)
+
+    @on(Button.Pressed, "#show-sidebar-btn")
+    def show_sidebar_button(self) -> None:
+        """Reveal the sidebar from the compact chat header."""
+        self.action_toggle_sidebar()
 
     def action_help(self) -> None:
         """Show help information."""
@@ -3022,10 +3155,18 @@ class MeshTUI(App):
   4. Click "Login" to authenticate
   5. Use command input to send commands
 
+[bold yellow]Small screens:[/bold yellow]
+  • F2 - Show or hide the contacts/channels sidebar
+  • F3 - Compact chrome (shorter headers, less padding)
+  • Auto-enables under 80x24 (sidebar hides under 60 columns)
+  • meshtui --compact  starts in compact mode with sidebar hidden
+
 [bold yellow]Keyboard Shortcuts:[/bold yellow]
   • Ctrl+C - Quit application
   • Ctrl+R - Refresh current view
   • F1 - Show this help
+  • F2 - Toggle sidebar
+  • F3 - Toggle compact mode
 
 [bold yellow]Connection Types:[/bold yellow]
   • Direct contacts - Point-to-point messaging
@@ -3117,6 +3258,11 @@ def main():
         "-p", "--port", type=int, default=5000, help="TCP port (default: 5000)"
     )
     parser.add_argument("-a", "--address", help="Connect via BLE address or name")
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Start in compact mode with the sidebar hidden (small screens)",
+    )
 
     args = parser.parse_args()
 
