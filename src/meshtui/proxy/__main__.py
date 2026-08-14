@@ -13,6 +13,38 @@ from .config import ProxyConfig
 logger = logging.getLogger("meshcore.proxy")
 
 
+def apply_cli_overrides(config: ProxyConfig, args) -> ProxyConfig:
+    """Apply CLI flags onto a loaded config.
+
+    argparse defaults used to overwrite listen_host/listen_port even when
+    those flags were omitted, so a YAML listen_port never took effect (#8).
+    Only values the user actually passed are applied.
+    """
+    if getattr(args, "serial", None):
+        config.backend_type = "serial"
+        config.serial_port = args.serial
+        if getattr(args, "baudrate", None) is not None:
+            config.serial_baudrate = args.baudrate
+
+    if getattr(args, "ble", None):
+        config.backend_type = "ble"
+        config.ble_address = args.ble
+
+    if getattr(args, "host", None) is not None:
+        config.listen_host = args.host
+    if getattr(args, "port", None) is not None:
+        config.listen_port = args.port
+
+    if getattr(args, "debug", False):
+        config.log_level = "DEBUG"
+    if getattr(args, "log_file", None):
+        config.log_file = args.log_file
+    if getattr(args, "log_frames", False):
+        config.log_frames = True
+
+    return config
+
+
 def setup_logging(level: str, log_file: str = None):
     """Setup logging configuration.
 
@@ -66,8 +98,8 @@ Examples:
     parser.add_argument(
         '--baudrate', '-b',
         type=int,
-        default=115200,
-        help='Serial baudrate (default: 115200)'
+        default=None,
+        help='Serial baudrate (default: 115200, or from config)'
     )
     parser.add_argument(
         '--ble',
@@ -75,14 +107,14 @@ Examples:
     )
     parser.add_argument(
         '--host',
-        default='0.0.0.0',
-        help='TCP listen host (default: 0.0.0.0)'
+        default=None,
+        help='TCP listen host (default: 0.0.0.0, or from config)'
     )
     parser.add_argument(
         '--port', '-p',
         type=int,
-        default=5000,
-        help='TCP listen port (default: 5000)'
+        default=None,
+        help='TCP listen port (default: 5000, or from config)'
     )
     parser.add_argument(
         '--debug', '-d',
@@ -116,27 +148,7 @@ Examples:
         # Use defaults
         config = ProxyConfig()
 
-    # Override with CLI arguments
-    if args.serial:
-        config.backend_type = 'serial'
-        config.serial_port = args.serial
-        config.serial_baudrate = args.baudrate
-
-    if args.ble:
-        config.backend_type = 'ble'
-        config.ble_address = args.ble
-
-    config.listen_host = args.host
-    config.listen_port = args.port
-
-    if args.debug:
-        config.log_level = 'DEBUG'
-
-    if args.log_file:
-        config.log_file = args.log_file
-
-    if args.log_frames:
-        config.log_frames = True
+    apply_cli_overrides(config, args)
 
     # Setup logging
     setup_logging(config.log_level, config.log_file)
