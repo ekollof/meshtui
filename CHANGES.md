@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## Version 0.2.11 (2026-08-14)
+
 ### TCP proxy
 - `listen_host` / `listen_port` from a YAML config are no longer overwritten by CLI defaults. `--host` and `--port` only apply when you pass them (#8).
 
