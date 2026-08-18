@@ -1,3 +1,11 @@
 # These are supported funding model platforms
 
-ko_fi: andrath # Replace with a single Ko-fi username
+# Your existing Ko-fi
+github: [ekollof]
+ko_fi: andrath
+
+# Custom links (up to 4) ? add your donatr.ee here
+custom:
+  - "https://donatr.ee/andrath"   # This is the main one for all options (Ko-fi + crypto)
+  # You can add more if needed (up to 4 total):
+  # - "https://another-link.com"
