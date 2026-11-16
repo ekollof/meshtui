@@ -50,6 +50,15 @@ class MeshConnection:
         self.logger = logging.getLogger("meshtui.connection")
         self.low_power = False
 
+        # Remember the most recent connection attempt so the UI can offer a
+        # one-click retry after a failed initial connection.
+        self.last_connection: Optional[Dict[str, Any]] = None
+
+        # Keep the last serial attempt separately: auto-connect may fall back
+        # to BLE after a serial failure, but "Connect Serial" should still
+        # offer the port that was last tried.
+        self.last_serial_connection: Optional[Dict[str, Any]] = None
+
         # Managers (will be initialized after connection)
         self.contacts: Optional[ContactManager] = None
         self.channels: Optional[ChannelManager] = None
@@ -276,6 +285,12 @@ class MeshConnection:
                         self.logger.error("No MeshCore devices found")
                         return False
 
+            self.last_connection = {
+                "type": ConnectionType.BLE,
+                "address": address or getattr(device, "address", None),
+                "pin": pin,
+            }
+
             self.logger.info(
                 f"Connecting to BLE device: {address}" + (" with PIN" if pin else "")
             )
@@ -357,6 +372,11 @@ class MeshConnection:
     async def connect_tcp(self, hostname: str, port: int = 5000) -> bool:
         """Connect to a MeshCore device via TCP."""
         try:
+            self.last_connection = {
+                "type": ConnectionType.TCP,
+                "hostname": hostname,
+                "port": port,
+            }
             self.logger.info(f"Connecting to TCP device: {hostname}:{port}")
             self.meshcore = await MeshCore.create_tcp(
                 host=hostname, port=port, debug=False, only_error=False
@@ -421,6 +441,13 @@ class MeshConnection:
             True if connection successful, False otherwise
         """
         try:
+            self.last_connection = {
+                "type": ConnectionType.SERIAL,
+                "port": port,
+                "baudrate": baudrate,
+            }
+            self.last_serial_connection = self.last_connection
+
             # Optional: Verify this is a MeshCore device first
             if verify_meshcore:
                 self.logger.info(f"Verifying {port} is a MeshCore device...")
@@ -501,6 +528,77 @@ class MeshConnection:
                     pass
                 self.meshcore = None
             return False
+
+    async def reconnect_serial(self) -> bool:
+        """Retry the most recent serial connection attempt.
+
+        Returns:
+            True if the connection succeeded, False otherwise.
+        """
+        attempt = self.last_serial_connection
+        if not attempt and self.last_connection:
+            if self.last_connection.get("type") in (
+                ConnectionType.SERIAL,
+                "serial",
+            ):
+                attempt = self.last_connection
+
+        if not attempt:
+            self.logger.warning(
+                "Serial reconnect requested but no previous serial attempt is known"
+            )
+            return False
+
+        if self.meshcore:
+            await self.disconnect()
+
+        return await self.connect_serial(
+            port=attempt["port"],
+            baudrate=attempt.get("baudrate", 115200),
+            verify_meshcore=False,
+        )
+
+    async def reconnect(self) -> bool:
+        """Retry the most recent connection attempt.
+
+        Used by the UI when the initial auto-connect failed. This does not
+        scan for devices; it retries the same serial port, BLE address, or TCP
+        endpoint that was last attempted.
+
+        Returns:
+            True if the connection succeeded, False otherwise.
+        """
+        if not self.last_connection:
+            self.logger.warning(
+                "Reconnect requested but no previous connection attempt is known"
+            )
+            return False
+
+        attempt = self.last_connection
+        conn_type = attempt.get("type")
+        self.logger.info("Reconnecting using last attempt: %s", attempt)
+
+        if conn_type in (ConnectionType.SERIAL, "serial"):
+            return await self.reconnect_serial()
+
+        # Drop any half-open connection before retrying BLE/TCP.
+        if self.meshcore:
+            await self.disconnect()
+
+        if conn_type in (ConnectionType.BLE, "ble"):
+            return await self.connect_ble(
+                address=attempt.get("address"),
+                pin=attempt.get("pin"),
+            )
+
+        if conn_type in (ConnectionType.TCP, "tcp"):
+            return await self.connect_tcp(
+                hostname=attempt["hostname"],
+                port=attempt.get("port", 5000),
+            )
+
+        self.logger.error("Unknown connection type for reconnect: %s", conn_type)
+        return False
 
     def _initialize_device_database(self):
         """Initialize database specific to this device using its public key.

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Desktop notifications
+- Switched from `notify2`/`dbus-python` to **jeepney**, a pure-Python D-Bus client. Notifications now work without `notify-send`, native build packages, or the `notifications` extra; they are enabled automatically when a freedesktop notification daemon is available on the session bus.
+
+### Connection recovery
+- Added **Reconnect** and **Connect Serial** buttons to the sidebar so a serial companion can be retried after the initial auto-connect fails. Reconnect (also `F5`) retries the last serial port, BLE address, or TCP endpoint; Connect Serial lists available ports and accepts a custom path/baudrate.
+
 ## Version 0.2.11 (2026-08-14)
 
 ### TCP proxy

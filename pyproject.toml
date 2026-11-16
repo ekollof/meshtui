@@ -33,6 +33,7 @@ dependencies = [
     "textual >= 0.50.0",
     "requests >= 2.28.0",
     "aiohttp >= 3.9.0",
+    "jeepney >= 0.8.0",
 ]
 
 [project.urls]
@@ -56,9 +57,9 @@ proxy = [
     "pyserial-asyncio >= 0.6",
     "pyyaml >= 6.0",
 ]
+# Kept for backwards compatibility; jeepney is now a core dependency.
 notifications = [
-    "notify2 >= 0.3.1",
-    "dbus-python >= 1.2.18",
+    "jeepney >= 0.8.0",
 ]
 
 [tool.pytest.ini_options]

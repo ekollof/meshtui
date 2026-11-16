@@ -382,6 +382,31 @@ TextArea:focus {
     margin: 1 0;
 }
 
+/* Serial Connector Dialog */
+#serial-connect-dialog {
+    background: $panel;
+    border: solid $accent;
+    padding: 2;
+    width: 70;
+    max-width: 100%;
+    height: 32;
+    max-height: 90%;
+    overflow-y: auto;
+}
+
+#serial-ports-list {
+    height: 8;
+    min-height: 5;
+    background: $surface;
+    border: solid $primary;
+    margin: 1 0;
+}
+
+#serial-scan-status {
+    margin: 1 0;
+    color: $text-muted;
+}
+
 #scan-status {
     margin: 1 0;
     color: $text-muted;
@@ -593,6 +618,8 @@ App.compact #delete-channel-btn {
 }
 
 App.compact #scan-ble-btn,
+App.compact #connect-serial-btn,
+App.compact #reconnect-btn,
 App.compact #advert-0hop-btn,
 App.compact #advert-flood-btn {
     display: none;
@@ -657,6 +684,7 @@ App.compact #node-control-container {
 
 App.compact #create-channel-dialog,
 App.compact #ble-scanner-dialog,
+App.compact #serial-connect-dialog,
 App.compact #delete-channel-dialog {
     width: 36;
     max-width: 100%;
@@ -665,4 +693,8 @@ App.compact #delete-channel-dialog {
 
 App.compact #ble-scanner-dialog {
     height: 20;
+}
+
+App.compact #serial-connect-dialog {
+    height: 22;
 }

@@ -12,13 +12,6 @@ import platform
 from pathlib import Path
 from typing import Optional
 
-try:
-    import notify2
-
-    NOTIFICATIONS_AVAILABLE = True
-except ImportError:
-    NOTIFICATIONS_AVAILABLE = False
-
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -46,6 +39,7 @@ from .mentions import (
     message_mentions,
     nicknames_from_messages,
 )
+from .notifications import DesktopNotifier
 
 
 def detect_low_power_host(
@@ -193,6 +187,7 @@ class MeshTUI(App):
         Binding("f2", "toggle_sidebar", "Sidebar"),
         Binding("f3", "toggle_compact", "Compact"),
         Binding("f4", "reply_last", "Reply"),
+        Binding("f5", "reconnect", "Reconnect"),
     ]
 
     # Terminal sizes (cells) that trigger automatic compact layout.
@@ -233,16 +228,12 @@ class MeshTUI(App):
             self._compact_override = True
 
         # Setup desktop notifications
+        self.notifier = DesktopNotifier()
         self.notifications_enabled = False
-        if NOTIFICATIONS_AVAILABLE and not self.low_power:
-            try:
-                notify2.init("MeshTUI")
-                self.notifications_enabled = True
-                self.logger.info("Desktop notifications enabled")
-            except Exception as e:
-                self.logger.warning(f"Failed to initialize notifications: {e}")
+        if not self.low_power:
+            self.notifications_enabled = self.notifier.connect()
         else:
-            self.logger.info("notify2 not available, desktop notifications disabled")
+            self.logger.info("Low-power mode, desktop notifications disabled")
 
     def compose(self) -> ComposeResult:
         """Compose the UI layout."""
@@ -261,6 +252,12 @@ class MeshTUI(App):
                 yield ListView(id="channels-list")
 
                 # Instant-click buttons for sidebar
+                yield InstantButton(
+                    "Reconnect", id="reconnect-btn", variant="success"
+                )
+                yield InstantButton(
+                    "Connect Serial", id="connect-serial-btn", variant="primary"
+                )
                 yield InstantButton(
                     "Scan BLE Devices", id="scan-ble-btn", variant="primary"
                 )
@@ -701,7 +698,7 @@ class MeshTUI(App):
     def _send_desktop_notification(
         self, title: str, message: str, urgency: str = "normal"
     ):
-        """Send a desktop notification via D-Bus.
+        """Send a desktop notification via the session D-Bus.
 
         Args:
             title: Notification title
@@ -711,15 +708,10 @@ class MeshTUI(App):
         if not self.notifications_enabled:
             return
 
-        try:
-            # Use network-wireless icon for mesh network messages
-            n = notify2.Notification(title, message, "network-wireless")
-            urgency_map = {"low": 0, "normal": 1, "critical": 2}
-            n.set_urgency(urgency_map.get(urgency, 1))
-            n.show()
+        if self.notifier.send(title, message, urgency=urgency):
             self.logger.debug(f"Sent desktop notification: {title}")
-        except Exception as e:
-            self.logger.warning(f"Failed to send desktop notification: {e}")
+        else:
+            self.logger.debug("Desktop notification was not delivered")
 
     def _on_new_message(
         self,
@@ -926,6 +918,22 @@ class MeshTUI(App):
                 f"Could not update channel display for {channel_name}: {e}"
             )
 
+    async def _refresh_after_connect(self) -> None:
+        """Refresh contacts, channels, and messages after a successful connect."""
+        import asyncio
+
+        await asyncio.wait_for(self.update_contacts(), timeout=5.0)
+        await asyncio.wait_for(self.update_channels(), timeout=20.0)
+        await asyncio.wait_for(self.refresh_messages(), timeout=5.0)
+
+    def _notify_connection_failed(self, message: str) -> None:
+        """Show a connection failure with hints for retrying from the UI."""
+        self.notify(
+            f"{message}. Use Reconnect, Connect Serial, or Scan BLE Devices to retry.",
+            severity="error",
+            timeout=10,
+        )
+
     async def auto_connect(self) -> None:
         """Attempt to auto-connect to a meshcore device."""
         import asyncio
@@ -965,6 +973,9 @@ class MeshTUI(App):
                     self.logger.error(
                         f"Failed to connect to specified serial device: {self.args.serial}"
                     )
+                    self._notify_connection_failed(
+                        f"Could not connect to serial device {self.args.serial}"
+                    )
                 return  # Don't try auto-detection when serial is explicitly specified
 
             elif self.args.tcp:
@@ -990,6 +1001,9 @@ class MeshTUI(App):
                     self.logger.error(
                         f"Failed to connect to specified TCP device: {self.args.tcp}:{self.args.port}"
                     )
+                    self._notify_connection_failed(
+                        f"Could not connect to TCP device {self.args.tcp}:{self.args.port}"
+                    )
                 return  # Don't try auto-detection when TCP is explicitly specified
 
             elif self.args.address:
@@ -1010,6 +1024,9 @@ class MeshTUI(App):
                 else:
                     self.logger.error(
                         f"Failed to connect to specified BLE device: {self.args.address}"
+                    )
+                    self._notify_connection_failed(
+                        f"Could not connect to BLE device {self.args.address}"
                     )
                 return  # Don't try auto-detection when BLE address is explicitly specified
 
@@ -1082,8 +1099,48 @@ class MeshTUI(App):
                 return
 
             self.logger.info("Auto-connect failed - no compatible devices found")
+            self._notify_connection_failed("No compatible device found")
         except Exception as e:
             self.logger.error(f"Auto-connect failed: {e}")
+            self._notify_connection_failed(f"Auto-connect failed: {e}")
+
+    @on(Button.Pressed, "#reconnect-btn")
+    async def reconnect_device(self) -> None:
+        """Retry the last connection attempt, or scan if none is known."""
+        self.logger.info("Reconnect requested...")
+
+        try:
+            if not self.connection.last_connection:
+                self.notify(
+                    "No previous connection attempt; scanning for devices...",
+                    severity="information",
+                )
+                await self.auto_connect()
+                return
+
+            self.notify("Reconnecting...", severity="information", timeout=3)
+            success = await self.connection.reconnect()
+
+            if success:
+                await self._refresh_after_connect()
+                device_name = (self.connection.device_info or {}).get(
+                    "name", "device"
+                )
+                self.logger.info(f"✓ Reconnected to {device_name}")
+                self.notify(
+                    f"Reconnected to {device_name}", severity="information"
+                )
+            else:
+                self.logger.error("✗ Reconnect failed")
+                self.notify(
+                    "Reconnect failed. Check the device, or use Connect Serial to pick a port.",
+                    severity="error",
+                    timeout=10,
+                )
+
+        except Exception as e:
+            self.logger.error(f"Reconnect failed: {e}")
+            self.notify(f"Reconnect failed: {e}", severity="error", timeout=10)
 
     @on(Button.Pressed, "#advert-0hop-btn")
     async def send_zero_hop_advert(self) -> None:
@@ -1329,6 +1386,198 @@ class MeshTUI(App):
         """Handle button clicks to trigger immediately without requiring focus first."""
         # This allows single-click activation of buttons even when they don't have focus
         pass
+
+    @on(Button.Pressed, "#connect-serial-btn")
+    async def show_serial_connector(self) -> None:
+        """Show a dialog for connecting to a MeshCore device over serial."""
+        from textual.widgets import Label
+        from textual.containers import Horizontal
+        from textual.screen import ModalScreen
+
+        last_serial = self.connection.last_serial_connection or {}
+        default_port = last_serial.get("port", "")
+        default_baudrate = last_serial.get(
+            "baudrate", getattr(self.args, "baudrate", 115200)
+        )
+        if not default_port:
+            default_port = getattr(self.args, "serial", None) or ""
+
+        class SerialConnectScreen(ModalScreen):
+            """Modal for selecting and connecting to a serial device."""
+
+            def compose(self):
+                with VerticalScroll(id="serial-connect-dialog"):
+                    yield Static("[bold cyan]Serial Device Connection[/bold cyan]")
+                    yield Static(
+                        "Select a serial port to connect to your MeshCore companion.",
+                        classes="help-text",
+                    )
+
+                    yield Static("Detected serial ports:", classes="section-label")
+                    yield Static(
+                        "Loading serial ports...", id="serial-scan-status"
+                    )
+                    yield ListView(id="serial-ports-list")
+
+                    yield Label("Serial port:")
+                    yield Input(
+                        placeholder="/dev/ttyUSB0 or COM3",
+                        id="serial-port-input",
+                    )
+                    yield Label("Baudrate:")
+                    yield Input(placeholder="115200", id="serial-baudrate-input")
+
+                    with Horizontal(id="dialog-buttons"):
+                        yield Button(
+                            "Connect", id="serial-connect-btn", variant="success"
+                        )
+                        yield Button(
+                            "Refresh",
+                            id="serial-refresh-btn",
+                            variant="primary",
+                        )
+                        yield Button(
+                            "Close", id="serial-close-btn", variant="default"
+                        )
+
+            def on_mount(self):
+                """Prefill the last used port and load available ports."""
+                self.query_one("#serial-port-input", Input).value = default_port
+                self.query_one("#serial-baudrate-input", Input).value = str(
+                    default_baudrate
+                )
+                asyncio.create_task(self.refresh_ports())
+
+            async def refresh_ports(self):
+                """List serial ports without probing them."""
+                status = self.query_one("#serial-scan-status", Static)
+                ports_list = self.query_one("#serial-ports-list", ListView)
+
+                status.update("Scanning serial ports...")
+                try:
+                    ports = await self.app.connection.serial_transport.list_ports()
+
+                    for item in list(ports_list.children):
+                        if isinstance(item, ListItem):
+                            await item.remove()
+                    ports_list.clear()
+
+                    if not ports:
+                        status.update(
+                            "No serial ports found. Enter a port path manually."
+                        )
+                        return
+
+                    status.update(
+                        f"Found {len(ports)} serial port(s). Select one to use it:"
+                    )
+                    for port in ports:
+                        device = port.get("device", "")
+                        description = port.get("description") or "Serial device"
+                        text = f"{device}\n  {description}"
+                        item = ListItem(
+                            Static(text), id=f"serial-{sanitize_id(device)}"
+                        )
+                        item.port_device = device
+                        ports_list.append(item)
+
+                    port_input = self.query_one("#serial-port-input", Input)
+                    if not port_input.value:
+                        port_input.value = ports[0]["device"]
+
+                except Exception as e:
+                    self.app.logger.error(f"Error listing serial ports: {e}")
+                    status.update(f"[red]Error listing serial ports: {e}[/red]")
+
+            @on(ListView.Selected, "#serial-ports-list")
+            def select_port(self, event: ListView.Selected):
+                """Fill the port input with the selected port."""
+                if event.item and hasattr(event.item, "port_device"):
+                    self.query_one(
+                        "#serial-port-input", Input
+                    ).value = event.item.port_device
+
+            @on(Button.Pressed, "#serial-refresh-btn")
+            def refresh_port_list(self):
+                """Reload the serial port list."""
+                asyncio.create_task(self.refresh_ports())
+
+            @on(Button.Pressed, "#serial-connect-btn")
+            async def connect_serial(self):
+                """Connect to the entered serial port."""
+                status = self.query_one("#serial-scan-status", Static)
+                port = self.query_one("#serial-port-input", Input).value.strip()
+                baud_str = self.query_one(
+                    "#serial-baudrate-input", Input
+                ).value.strip()
+
+                if not port:
+                    status.update("[red]Enter a serial port path first[/red]")
+                    return
+
+                try:
+                    baudrate = int(baud_str or "115200")
+                    if baudrate <= 0:
+                        raise ValueError
+                except ValueError:
+                    status.update(
+                        "[red]Baudrate must be a positive number[/red]"
+                    )
+                    return
+
+                self.app.logger.info(
+                    f"Connecting to serial device: {port}@{baudrate}"
+                )
+                status.update(f"Connecting to {port}...")
+
+                try:
+                    if self.app.connection.meshcore:
+                        await self.app.connection.disconnect()
+
+                    success = await self.app.connection.connect_serial(
+                        port=port, baudrate=baudrate, verify_meshcore=False
+                    )
+
+                    if success:
+                        status.update(f"✓ Connected to {port}")
+                        try:
+                            await self.app._refresh_after_connect()
+                        except Exception as e:
+                            self.app.logger.error(
+                                f"Connected but UI refresh failed: {e}"
+                            )
+                        device_name = (
+                            self.app.connection.device_info or {}
+                        ).get("name", port)
+                        self.app.notify(
+                            f"Connected to {device_name}",
+                            severity="information",
+                        )
+                        await asyncio.sleep(1)
+                        self.dismiss()
+                    else:
+                        status.update(
+                            "[red]✗ Connection failed. Check the port, permissions, "
+                            "and that the device is a MeshCore companion.[/red]"
+                        )
+                        self.app.notify(
+                            f"Failed to connect to {port}", severity="error"
+                        )
+                except Exception as e:
+                    self.app.logger.error(f"Serial connection failed: {e}")
+                    status.update(f"[red]✗ Connection failed: {e}[/red]")
+
+            @on(Button.Pressed, "#serial-close-btn")
+            def close(self):
+                """Close the serial connection dialog."""
+                self.dismiss()
+
+            def on_key(self, event):
+                """Close dialog on Escape key."""
+                if event.key == "escape":
+                    self.dismiss()
+
+        self.push_screen(SerialConnectScreen())
 
     @on(Button.Pressed, "#scan-ble-btn")
     async def show_ble_scanner(self) -> None:
@@ -2000,6 +2249,10 @@ class MeshTUI(App):
     def action_refresh(self) -> None:
         """Refresh the current view."""
         self.logger.info("Refreshing...")
+
+    async def action_reconnect(self) -> None:
+        """Reconnect to the last device (F5)."""
+        await self.reconnect_device()
 
     def on_resize(self, event) -> None:
         """Re-evaluate compact / sidebar layout when the terminal changes size."""
@@ -3202,6 +3455,11 @@ class MeshTUI(App):
             self.logger.info("Connection closed successfully")
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
+        finally:
+            try:
+                self.notifier.close()
+            except Exception as e:
+                self.logger.debug(f"Error closing desktop notifications: {e}")
 
     def action_quit(self) -> None:
         """Override quit action to ensure proper cleanup."""
@@ -3266,9 +3524,13 @@ class MeshTUI(App):
   • F2 - Toggle sidebar
   • F3 - Toggle compact mode
   • F4 - Reply to last channel sender (@[name]:)
+  • F5 - Reconnect to the last serial/BLE/TCP device
   • Tab - Complete an @mention in the message box
 
 [bold yellow]Connection Types:[/bold yellow]
+  • Reconnect - retry the last serial/BLE/TCP connection
+  • Connect Serial - choose a serial port and baudrate
+  • Scan BLE Devices - find and pair Bluetooth devices
   • Direct contacts - Point-to-point messaging
   • Channels - Broadcast to all channel members
   • Room servers - BBS-style shared messaging

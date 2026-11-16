@@ -76,7 +76,10 @@ uv tool install meshtui
 
 This will install the `meshtui` command globally and isolate its dependencies.
 
-Desktop notifications are optional and Linux-only (`pipx install 'meshtui[notifications]'`). They are not required to run the TUI. See [Linux system packages](#linux-system-packages-optional) if that extra fails to build.
+Desktop notifications are built in on Linux/BSD through the session D-Bus using
+the pure-Python `jeepney` client; no `notify-send` or native packages are
+needed. On systems without a notification daemon, MeshTUI simply falls back to
+in-app notifications. See [Desktop notifications](#desktop-notifications-linuxbsd).
 
 #### Optional: TCP Proxy Component
 
@@ -122,38 +125,15 @@ uv pip install -e .
 # python -m venv .venv && source .venv/bin/activate && pip install -e .
 ```
 
-### Linux system packages (optional)
+### Desktop notifications (Linux/BSD)
 
-Desktop notifications use D-Bus (`notify2` / `dbus-python`). They are **not** required to run MeshTUI.
+MeshTUI sends notifications through the freedesktop.org notification service
+on the session D-Bus. It uses **jeepney**, a pure-Python D-Bus client, so no
+`notify-send`, `notify2`, `dbus-python`, or native build packages are needed.
 
-**Core install** (recommended, works on Linux, macOS, and Windows):
-
-```bash
-pipx install meshtui
-# or
-uv tool install meshtui
-```
-
-**Desktop notifications** (Linux with D-Bus only):
-
-```bash
-# Debian / Ubuntu (including Debian 13 Trixie LXC)
-sudo apt install pkg-config libdbus-1-dev libglib2.0-dev
-
-# Fedora
-sudo dnf install pkgconf-pkg-config dbus-devel glib2-devel
-
-# then
-pipx install 'meshtui[notifications]'
-# or
-uv tool install 'meshtui[notifications]'
-```
-
-On a minimal Debian/Ubuntu container, the `pkg-config` / `libdbus-1-dev` / `libglib2.0-dev` packages are only needed if you install the `notifications` extra.
-
-**macOS:** D-Bus notifications are not used. Install with `uv tool install meshtui` or `pipx install meshtui`. Do not install the `notifications` extra unless you have `dbus` available (for example via `brew install dbus`).
-
-**Windows:** `dbus-python` does not build on native Windows. Install with `pipx install meshtui` or `uv tool install meshtui`. WSL works the same as Linux.
+Notifications are enabled automatically when a notification daemon is
+available on the session bus. On macOS, Windows, and headless sessions without
+D-Bus, MeshTUI runs normally and only uses its in-app notifications.
 
 ### Requirements
 
@@ -303,15 +283,29 @@ When the sidebar is hidden, a **Show contacts (F2)** bar appears above the chat,
 - `F2` - Toggle contacts sidebar
 - `F3` - Toggle compact mode
 - `F4` - Reply to the last person who spoke in the current channel
+- `F5` - Reconnect to the last serial/BLE/TCP device
 - `Tab` - Complete an `@` mention in the message box (or move focus)
 - `Enter` - Send message or activate button
 
 ### First Time Setup
 
 1. **Auto-connect**: MeshTUI attempts to connect automatically on startup
-2. **Manual scan**: Click "Scan Devices" to manually search for devices
+2. **Manual connect**: Click "Connect Serial" to pick a serial port, or "Scan BLE Devices" for Bluetooth
 3. **Command line**: Specify device directly with command line options
 4. **Start chatting**: Use the input field to send messages or commands
+
+### Reconnecting After a Failed Connection
+
+If the initial auto-connect fails (for example because the USB device was
+plugged in after MeshTUI started, or permissions were just fixed), use the
+sidebar buttons:
+
+- **Reconnect** retries the last serial port, BLE address, or TCP endpoint
+- **Connect Serial** lists the available serial ports so you can pick one,
+  enter a different path, and choose the baudrate
+
+Both buttons refresh contacts, channels, and message history after a
+successful connection, so you do not need to restart MeshTUI.
 
 ### Connection Process
 
